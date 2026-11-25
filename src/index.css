@@ -17,13 +17,20 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Engineering Workbench Background for Home Workspace */
+/* Sunrise Warm Cream-Matcha Study Desk Background (Day) */
 .ios-desk-bg {
-  background-color: #f4f2ec;
+  background-color: #f5f3ec;
   background-image:
-    linear-gradient(to right, rgba(140, 128, 110, 0.11) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(140, 128, 110, 0.11) 1px, transparent 1px);
-  background-size: 24px 24px;
+    radial-gradient(ellipse 70% 52% at 14% 6%,
+      rgba(255, 206, 138, 0.22) 0%,
+      rgba(255, 228, 185, 0.09) 45%,
+      transparent 75%),
+    radial-gradient(ellipse 65% 50% at 88% 92%,
+      rgba(112, 156, 130, 0.12) 0%,
+      transparent 70%),
+    linear-gradient(to right, rgba(140, 128, 110, 0.10) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(140, 128, 110, 0.10) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 24px 24px, 24px 24px;
   background-attachment: fixed;
 }
 
@@ -47,17 +54,20 @@
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Dark Theme Workspace Overrides */
+/* Twilight Rose Sunset Workspace Overrides (Night) */
 .dark-theme.ios-desk-bg {
-  background-color: #0e0f12;
+  background-color: #100e14;
   background-image:
-    radial-gradient(ellipse 72% 46% at 56% 0%,
-      rgba(130, 175, 225, 0.09) 0%,
-      rgba(255, 225, 185, 0.035) 44%,
-      transparent 75%),
-    linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
-  background-size: 100% 100%, 24px 24px, 24px 24px;
+    radial-gradient(ellipse 75% 50% at 16% 4%,
+      rgba(232, 108, 152, 0.14) 0%,
+      rgba(147, 82, 168, 0.08) 44%,
+      transparent 76%),
+    radial-gradient(ellipse 65% 48% at 86% 92%,
+      rgba(255, 158, 118, 0.06) 0%,
+      transparent 72%),
+    linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 24px 24px, 24px 24px;
   color: #f4f4f5;
 }
 
