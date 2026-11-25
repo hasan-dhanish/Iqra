@@ -208,6 +208,27 @@ export interface StudyGoal {
   createdAt: string;
 }
 
+export interface CollegePeriodDef {
+  id: string;
+  label: string; // e.g. "Period 1" or "Lunch Break"
+  isBreak: boolean;
+  startTime: string; // HH:MM
+  endTime: string; // HH:MM
+}
+
+export interface CollegeTimetableCell {
+  title: string;
+  projectId?: string;
+  room: string;
+  colorHex: string;
+}
+
+export interface CollegeTimetableConfig {
+  days: number[]; // 0 = Mon .. 6 = Sun
+  periods: CollegePeriodDef[];
+  cells: Record<string, CollegeTimetableCell>; // key: `${dayIndex}-${periodId}`
+}
+
 export interface LiveTypingState {
   targetKey: string;
   author: MemberName;

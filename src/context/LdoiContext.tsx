@@ -3,6 +3,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { isEmailAllowedForTeam, isSupabaseConfigured, supabase } from '../lib/supabase';
 import type {
   Assignment,
+  CollegeTimetableConfig,
   DocType,
   Enquiry,
   Exam,
@@ -43,7 +44,23 @@ interface LdoiState {
   exams: Exam[];
   resources: ResourceItem[];
   studyGoals: StudyGoal[];
+  collegeTimetable: CollegeTimetableConfig;
 }
+
+const DEFAULT_COLLEGE_TIMETABLE: CollegeTimetableConfig = {
+  days: [0, 1, 2, 3, 4],
+  periods: [
+    { id: 'p1', label: 'Period 1', isBreak: false, startTime: '09:00', endTime: '09:50' },
+    { id: 'p2', label: 'Period 2', isBreak: false, startTime: '09:50', endTime: '10:40' },
+    { id: 'b1', label: 'Short Break', isBreak: true, startTime: '10:40', endTime: '10:55' },
+    { id: 'p3', label: 'Period 3', isBreak: false, startTime: '10:55', endTime: '11:45' },
+    { id: 'p4', label: 'Period 4', isBreak: false, startTime: '11:45', endTime: '12:35' },
+    { id: 'b2', label: 'Lunch Break', isBreak: true, startTime: '12:35', endTime: '13:20' },
+    { id: 'p5', label: 'Period 5', isBreak: false, startTime: '13:20', endTime: '14:10' },
+    { id: 'p6', label: 'Period 6', isBreak: false, startTime: '14:10', endTime: '15:00' },
+  ],
+  cells: {},
+};
 
 const EMPTY_STATE: LdoiState = {
   projects: [],
@@ -60,6 +77,7 @@ const EMPTY_STATE: LdoiState = {
   exams: [],
   resources: [],
   studyGoals: [],
+  collegeTimetable: DEFAULT_COLLEGE_TIMETABLE,
 };
 
 const STORAGE_KEY = 'learning_dashboard_state_v1';
@@ -136,6 +154,8 @@ interface LdoiContextValue extends LdoiState {
   addStudyGoal: (input: Omit<StudyGoal, 'id' | 'createdAt'>) => Promise<StudyGoal>;
   toggleStudyGoal: (id: string) => Promise<void>;
   deleteStudyGoal: (id: string) => Promise<void>;
+
+  updateCollegeTimetable: (next: CollegeTimetableConfig) => Promise<void>;
 }
 
 const LdoiContext = createContext<LdoiContextValue | null>(null);
@@ -1283,6 +1303,16 @@ export const LdoiProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [commitLocalState]
   );
 
+  const updateCollegeTimetable = useCallback(
+    async (next: CollegeTimetableConfig) => {
+      commitLocalState((prev) => ({
+        ...prev,
+        collegeTimetable: next,
+      }));
+    },
+    [commitLocalState]
+  );
+
   const value = useMemo<LdoiContextValue>(
     () => ({
       ...state,
@@ -1338,6 +1368,7 @@ export const LdoiProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addStudyGoal,
       toggleStudyGoal,
       deleteStudyGoal,
+      updateCollegeTimetable,
     }),
     [
       state,
@@ -1393,6 +1424,7 @@ export const LdoiProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addStudyGoal,
       toggleStudyGoal,
       deleteStudyGoal,
+      updateCollegeTimetable,
     ]
   );
 
