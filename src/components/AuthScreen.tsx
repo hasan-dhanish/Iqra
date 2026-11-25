@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react';
-import { CheckCircle2, Lock, Mail, Moon, Sun } from 'lucide-react';
+import React, { useState } from 'react';
+import { ArrowRight, CheckCircle2, Lock, Moon, Sun } from 'lucide-react';
 import { TEAM_MEMBERS } from '../constants';
 import { useLdoi } from '../context/LdoiContext';
 import type { MemberName } from '../types';
@@ -10,41 +10,16 @@ interface AuthScreenProps {
   onToggleDarkMode: () => void;
 }
 
+const DUMMY_PASSCODE = 'study123';
+
 export const AuthScreen: React.FC<AuthScreenProps> = ({
   darkMode,
   onToggleDarkMode,
 }) => {
-  const { signIn, signUp, quickLocalSignIn, syncMode } = useLdoi();
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
-  const [rememberMe, setRememberMe] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('ldoi_remember_me') !== 'false';
-    } catch {
-      return true;
-    }
-  });
-  const [email, setEmail] = useState<string>(() => {
-    try {
-      return localStorage.getItem('ldoi_remembered_email') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [password, setPassword] = useState('');
+  const { signIn, quickLocalSignIn, syncMode } = useLdoi();
   const [memberName, setMemberName] = useState<MemberName>('Sajitha');
-  const [revealedMember, setRevealedMember] = useState<MemberName | null>('Sajitha');
-  const memberTimerRef = useRef<number | null>(null);
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-
-  const handleSelectMember = (nextName: MemberName) => {
-    if (nextName === memberName && revealedMember === nextName) return;
-    if (memberTimerRef.current) window.clearTimeout(memberTimerRef.current);
-    setMemberName(nextName);
-    setRevealedMember(null);
-    memberTimerRef.current = window.setTimeout(() => {
-      setRevealedMember(nextName);
-    }, 200);
-  };
   const [busy, setBusy] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
   const [unlockLabel, setUnlockLabel] = useState('');
@@ -60,341 +35,157 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    if (!password.trim()) {
+      setError('Enter your password');
+      return;
+    }
+
+    if (syncMode === 'local') {
+      if (password !== DUMMY_PASSCODE) {
+        setError('Incorrect password');
+        return;
+      }
+      triggerUnlockAnimation(memberName, () => quickLocalSignIn(memberName));
+      return;
+    }
+
     setBusy(true);
-    try {
-      localStorage.setItem('ldoi_remember_me', String(rememberMe));
-      if (rememberMe && email.trim()) {
-        localStorage.setItem('ldoi_remembered_email', email.trim());
-      } else {
-        localStorage.removeItem('ldoi_remembered_email');
-      }
-    } catch {
-      // ignore storage errors
+    const email = `${memberName.toLowerCase()}@learninghub.local`;
+    const res = await signIn(email, password);
+    setBusy(false);
+    if (res.error) {
+      setError(res.error);
     }
-
-    if (mode === 'signin') {
-      const res = await signIn(email, password);
-      setBusy(false);
-      if (res.error) {
-        setError(res.error);
-      }
-    } else {
-      const res = await signUp(email, password, memberName);
-      setBusy(false);
-      if (res.error) {
-        setError(res.error);
-      }
-    }
-  };
-
-  const handleQuickSignIn = (name: MemberName) => {
-    triggerUnlockAnimation(name, () => quickLocalSignIn(name));
   };
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center lg:justify-end p-4 sm:p-6 lg:pr-14 xl:pr-20 overflow-hidden bg-[#111317]">
-      {/* Day Workbench Layer */}
+    <div className="relative min-h-screen flex flex-col justify-end p-4 sm:p-6 overflow-hidden bg-[#111317]">
+      {/* Sunrise Layer (Day) */}
       <div
         aria-hidden="true"
         className="absolute inset-0 login-workbench-day transition-opacity duration-500 ease-in-out"
         style={{ opacity: darkMode ? 0 : 1 }}
       />
-      {/* Night Workbench Layer (Cross-fades smoothly on toggle) */}
+      {/* Pinkish-Darker Sunset Layer (Night) */}
       <div
         aria-hidden="true"
         className="absolute inset-0 login-workbench-bg transition-opacity duration-500 ease-in-out"
         style={{ opacity: darkMode ? 1 : 0 }}
       />
 
-      <div
-        className={`relative z-10 w-full max-w-[372px] min-h-[476px] flex flex-col justify-between rounded-[26px] p-7 backdrop-blur-2xl backdrop-saturate-150 transition-all duration-500 ease-out ${darkMode
-          ? 'login-glass-card text-zinc-100'
-          : 'login-glass-card-day text-[#23211E]'
-          } ${unlocking ? 'opacity-0 scale-95 translate-y-2' : 'opacity-100 scale-100 translate-y-0'}`}
-      >
-        {unlocking ? (
-          <div className="py-16 flex flex-col items-center justify-center text-center space-y-3">
-            <div className="w-12 h-12 rounded-2xl bg-[#4D8B6F]/25 text-[#4D8B6F] flex items-center justify-center">
-              <CheckCircle2 className="w-6 h-6" />
-            </div>
-            <div className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-[#23211E]'}`}>
-              Opening {unlockLabel}&apos;s Workspace...
-            </div>
+      {/* Bottom Glassmorphic Dock */}
+      <div className="relative z-10 flex flex-col items-center gap-2 pb-1 sm:pb-3">
+        {error && (
+          <div className="px-3.5 py-1.5 text-[11px] font-semibold rounded-full text-[#FCA5A5] bg-[#DC2626]/30 border border-[#DC2626]/40 backdrop-blur-xl">
+            {error}
           </div>
-        ) : (
-          <>
-            {/* Compact Header + Day/Night Switch */}
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-3">
-                <LdoiLogo size={42} />
-                <div>
-                  <h1
-                    className={`text-lg font-bold leading-tight ${darkMode ? 'text-white' : 'text-[#23211E]'
-                      }`}
-                  >
-                    Learning Hub
-                  </h1>
-                  <p
-                    className={`text-[11px] font-medium ${darkMode ? 'text-zinc-400' : 'text-[#6D665C]'
-                      }`}
-                  >
-                    Sajitha &amp; Dhani
-                  </p>
-                </div>
-              </div>
+        )}
 
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={onToggleDarkMode}
-                  title={darkMode ? 'Switch to Day Theme' : 'Switch to Night Theme'}
-                  className={`ios-press p-1.5 rounded-lg border transition-colors ${darkMode
-                    ? 'bg-white/10 border-white/15 text-zinc-200 hover:bg-white/20'
-                    : 'bg-white/60 border-white/70 text-[#23211E] hover:bg-white/85'
-                    }`}
-                >
-                  {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-                </button>
-              </div>
+        <div
+          className={`w-full sm:w-auto rounded-2xl px-3.5 py-2.5 backdrop-blur-2xl backdrop-saturate-150 transition-all duration-300 ${
+            darkMode
+              ? 'login-glass-card text-zinc-100'
+              : 'login-glass-card-day text-[#23211E]'
+          }`}
+        >
+          {unlocking ? (
+            <div className="px-6 py-1.5 flex items-center justify-center gap-2.5">
+              <CheckCircle2 className="w-4 h-4 text-[#4D8B6F]" />
+              <span className="text-xs font-bold">
+                Opening {unlockLabel}&apos;s Study Desk...
+              </span>
             </div>
-
-            {/* Sliding Segmented Control */}
-            <div
-                className={`relative grid grid-cols-2 rounded-xl p-1 border ${darkMode
-                ? 'bg-black/30 border-white/10'
-                : 'bg-[#EAE4D7]/80 border-[#8C806E]/15'
-                }`}
+          ) : (
+            <form
+              onSubmit={handleSubmit}
+              className="flex flex-wrap items-center justify-between sm:justify-center gap-2.5 sm:gap-3"
             >
-              <div
-                aria-hidden="true"
-                className={`absolute top-1 bottom-1 left-1 w-[calc(50%-4px)] rounded-lg transition-transform duration-300 ease-out ${mode === 'signup' ? 'translate-x-full' : 'translate-x-0'
-                  } ${darkMode
-                    ? 'bg-white/15 border border-white/15 shadow-xs'
-                    : 'bg-white/85 border border-white/70 shadow-xs'
-                  }`}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('signin');
-                  setError('');
-                }}
-                className={`relative z-10 py-2 text-xs font-semibold rounded-lg transition-colors duration-200 ${mode === 'signin'
-                  ? darkMode
-                    ? 'text-white'
-                    : 'text-[#23211E]'
-                  : darkMode
-                    ? 'text-zinc-400 hover:text-white'
-                    : 'text-[#524C44] hover:text-[#23211E]'
-                  }`}
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('signup');
-                  setError('');
-                }}
-                className={`relative z-10 py-2 text-xs font-semibold rounded-lg transition-colors duration-200 ${mode === 'signup'
-                  ? darkMode
-                    ? 'text-white'
-                    : 'text-[#23211E]'
-                  : darkMode
-                    ? 'text-zinc-400 hover:text-white'
-                    : 'text-[#524C44] hover:text-[#23211E]'
-                  }`}
-              >
-                Create Account
-              </button>
-            </div>
-
-            {/* Compact form stage */}
-            <div className="relative mt-5 min-h-[252px] flex flex-col">
-              <form onSubmit={handleSubmit} className="flex-1 flex flex-col justify-between">
-                <div className="space-y-3.5">
-                  {/* Single-line Member Picker for Create Account (only selected shows full name) */}
-                  <div
-                    className={`transition-all duration-300 ease-out overflow-hidden ${
-                      mode === 'signup'
-                        ? 'max-h-14 opacity-100'
-                        : 'max-h-0 opacity-0 pointer-events-none !mt-0'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      {TEAM_MEMBERS.map((m) => {
-                        const selected = memberName === m.name;
-                        const expanded = revealedMember === m.name;
-                        return (
-                          <button
-                            key={m.name}
-                            type="button"
-                            onClick={() => handleSelectMember(m.name)}
-                            title={m.name}
-                            className={`ios-press flex items-center h-9 px-2 rounded-xl border text-xs font-semibold transition-all duration-200 ease-out overflow-hidden ${
-                              selected
-                                ? darkMode
-                                  ? 'border-[#388BFD] bg-[#388BFD]/20 text-white'
-                                  : 'border-[#2E74B5] bg-[#2E74B5]/12 text-[#2E74B5]'
-                                : darkMode
-                                ? 'border-white/15 bg-white/8 text-zinc-200 hover:bg-white/15'
-                                : 'border-white/70 bg-white/60 text-[#23211E] hover:bg-white/85'
-                            } ${expanded ? 'pr-3' : ''}`}
-                          >
-                            <span
-                              className="w-5 h-5 rounded-md flex items-center justify-center text-[9px] font-bold text-white shrink-0"
-                              style={{ backgroundColor: m.accentHex }}
-                            >
-                              {m.initials}
-                            </span>
-                            <span
-                              className={`whitespace-nowrap overflow-hidden transition-all duration-200 ease-out ${
-                                expanded
-                                  ? 'max-w-[96px] opacity-100 ml-2'
-                                  : 'max-w-0 opacity-0 ml-0'
-                              }`}
-                            >
-                              {m.name}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-              <div>
-                <label
-                  className={`block text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${darkMode ? 'text-zinc-400' : 'text-[#6D665C]'
-                    }`}
-                >
-                  Email
-                </label>
-                <div className="relative">
-                  <Mail
-                    className={`w-4 h-4 absolute left-3.5 top-3 ${darkMode ? 'text-zinc-400' : 'text-[#8C806E]'
-                      }`}
-                  />
-                  <input
-                    type="email"
-                    required
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="name@company.com"
-                    className={`w-full pl-10 pr-3.5 py-2.5 text-sm rounded-xl focus:outline-none focus:ring-2 ${darkMode
-                      ? 'bg-black/30 border border-white/15 text-white placeholder:text-zinc-500 focus:border-[#388BFD] focus:ring-[#388BFD]/20'
-                      : 'bg-white/65 border border-white/75 text-[#23211E] placeholder:text-[#787065] focus:bg-white/85 focus:border-[#2E74B5] focus:ring-[#2E74B5]/15'
-                      }`}
-                  />
-                </div>
+              {/* Brand */}
+              <div className="flex items-center gap-2.5 pr-1">
+                <LdoiLogo size={30} />
+                <span className="text-xs font-bold tracking-tight whitespace-nowrap">
+                  Learning Hub
+                </span>
               </div>
 
-              <div>
-                <label
-                  className={`block text-[11px] font-semibold uppercase tracking-wider mb-1.5 ${darkMode ? 'text-zinc-400' : 'text-[#6D665C]'
-                    }`}
-                >
-                  Password
-                </label>
-                <div className="relative">
-                  <Lock
-                    className={`w-4 h-4 absolute left-3.5 top-3 ${darkMode ? 'text-zinc-400' : 'text-[#8C806E]'
-                      }`}
-                  />
-                  <input
-                    type="password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Minimum 6 characters"
-                    className={`w-full pl-10 pr-3.5 py-2.5 text-sm rounded-xl focus:outline-none focus:ring-2 ${darkMode
-                      ? 'bg-black/30 border border-white/15 text-white placeholder:text-zinc-500 focus:border-[#388BFD] focus:ring-[#388BFD]/20'
-                      : 'bg-white/65 border border-white/75 text-[#23211E] placeholder:text-[#787065] focus:bg-white/85 focus:border-[#2E74B5] focus:ring-[#2E74B5]/15'
-                      }`}
-                  />
-                </div>
-              </div>
-
-              {/* Remember Me (Smoothly collapses in Create Account mode) */}
+              {/* Compact Profile Toggle (Sajitha / Dhani) */}
               <div
-                className={`transition-all duration-300 ease-out overflow-hidden ${
-                  mode === 'signin'
-                    ? 'max-h-10 opacity-100'
-                    : 'max-h-0 opacity-0 pointer-events-none'
+                className={`flex items-center rounded-xl p-0.5 border ${
+                  darkMode
+                    ? 'bg-black/30 border-white/10'
+                    : 'bg-white/45 border-white/70'
                 }`}
               >
-                <label className="inline-flex items-center gap-2 cursor-pointer select-none py-0.5">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 rounded accent-[#2E74B5] cursor-pointer"
-                  />
-                  <span
-                    className={`text-xs font-medium ${
-                      darkMode ? 'text-zinc-300' : 'text-[#524C44]'
-                    }`}
-                  >
-                    Remember me on this device
-                  </span>
-                </label>
-              </div>
-
-              {error && (
-                <div
-                  className={`p-3 text-xs font-medium rounded-xl border ${darkMode
-                    ? 'text-[#FCA5A5] bg-[#DC2626]/20 border-[#DC2626]/35'
-                    : 'text-[#C84B31] bg-[#C84B31]/10 border-[#C84B31]/25'
-                    }`}
-                >
-                  {error}
-                </div>
-              )}
-            </div>
-
-              <button
-                type="submit"
-                disabled={busy}
-                className="ios-press mt-4 w-full py-3 px-4 bg-[#2E74B5] hover:bg-[#3682C9] disabled:opacity-60 text-white text-sm font-semibold rounded-xl shadow-[0_6px_18px_rgba(46,116,181,0.32)]"
-              >
-                {busy ? 'Signing in...' : mode === 'signin' ? 'Sign In' : 'Create Account'}
-              </button>
-            </form>
-            </div>
-
-            {syncMode === 'local' && (
-              <div
-                className={`mt-6 pt-5 border-t ${darkMode ? 'border-white/12' : 'border-[#8C806E]/20'
-                  }`}
-              >
-                <div
-                  className={`text-[11px] font-semibold uppercase tracking-wider mb-2.5 ${darkMode ? 'text-zinc-400' : 'text-[#8C806E]'
-                    }`}
-                >
-                  Quick Sign-In
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {TEAM_MEMBERS.map((m) => (
+                {TEAM_MEMBERS.map((m) => {
+                  const selected = memberName === m.name;
+                  return (
                     <button
                       key={m.name}
                       type="button"
-                      onClick={() => handleQuickSignIn(m.name)}
-                      className={`ios-press flex items-center justify-center gap-1.5 py-2 px-2 text-xs font-semibold rounded-xl border ${darkMode
-                        ? 'bg-white/10 border-white/15 hover:bg-white/18 text-zinc-100'
-                        : 'bg-white/60 border-white/70 hover:bg-white/85 text-[#23211E]'
-                        }`}
+                      onClick={() => setMemberName(m.name)}
+                      className={`ios-press px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${
+                        selected
+                          ? darkMode
+                            ? 'bg-white/20 text-white shadow-xs'
+                            : 'bg-white/90 text-[#23211E] shadow-xs'
+                          : darkMode
+                          ? 'text-zinc-400 hover:text-white'
+                          : 'text-[#524C44] hover:text-[#23211E]'
+                      }`}
                     >
-                      <span
-                        className="w-2.5 h-2.5 rounded-xs"
-                        style={{ backgroundColor: m.accentHex }}
-                      />
                       {m.name}
                     </button>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            )}
-          </>
-        )}
+
+              {/* Password Input + Submit */}
+              <div className="relative flex items-center flex-1 sm:flex-initial min-w-[170px]">
+                <Lock
+                  className={`w-3.5 h-3.5 absolute left-3 pointer-events-none ${
+                    darkMode ? 'text-zinc-400' : 'text-[#8C806E]'
+                  }`}
+                />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (error) setError('');
+                  }}
+                  placeholder="Password..."
+                  className={`w-full sm:w-44 pl-8 pr-9 py-1.5 text-xs rounded-xl focus:outline-none focus:ring-2 ${
+                    darkMode
+                      ? 'bg-black/35 border border-white/15 text-white placeholder:text-zinc-400 focus:border-[#388BFD] focus:ring-[#388BFD]/25'
+                      : 'bg-white/70 border border-white/80 text-[#23211E] placeholder:text-[#787065] focus:bg-white/90 focus:border-[#2E74B5]'
+                  }`}
+                />
+                <button
+                  type="submit"
+                  disabled={busy}
+                  title="Enter Study Desk"
+                  className="ios-press absolute right-1 w-6 h-6 rounded-lg bg-[#2E74B5] hover:bg-[#3682C9] text-white flex items-center justify-center disabled:opacity-60"
+                >
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Dark / Light (Sunrise / Sunset) Toggle inside the Bottom Bar */}
+              <button
+                type="button"
+                onClick={onToggleDarkMode}
+                title={darkMode ? 'Switch to Sunrise (Day)' : 'Switch to Sunset (Night)'}
+                className={`ios-press p-2 rounded-xl border transition-colors ${
+                  darkMode
+                    ? 'bg-white/10 border-white/15 text-zinc-200 hover:bg-white/20 hover:text-white'
+                    : 'bg-white/60 border-white/80 text-[#23211E] hover:bg-white/90'
+                }`}
+              >
+                {darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              </button>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );

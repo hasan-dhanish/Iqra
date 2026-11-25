@@ -51,12 +51,10 @@
 .dark-theme.ios-desk-bg {
   background-color: #0e0f12;
   background-image:
-    radial-gradient(
-      ellipse 72% 46% at 56% 0%,
+    radial-gradient(ellipse 72% 46% at 56% 0%,
       rgba(130, 175, 225, 0.09) 0%,
       rgba(255, 225, 185, 0.035) 44%,
-      transparent 75%
-    ),
+      transparent 75%),
     linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
   background-size: 100% 100%, 24px 24px, 24px 24px;
@@ -169,8 +167,7 @@
 
 /* Light & Dark Theme Glassmorphic Real Folder Card */
 .folder-shell {
-  filter: drop-shadow(0 10px 18px rgba(35, 33, 30, 0.14))
-          drop-shadow(0 2px 5px rgba(35, 33, 30, 0.08));
+  filter: drop-shadow(0 10px 18px rgba(35, 33, 30, 0.14)) drop-shadow(0 2px 5px rgba(35, 33, 30, 0.08));
 }
 
 .folder-paper-back {
@@ -187,12 +184,10 @@
 }
 
 .folder-glass-pocket {
-  background: linear-gradient(
-    158deg,
-    rgba(255, 255, 255, 0.72) 0%,
-    rgba(250, 248, 243, 0.56) 55%,
-    rgba(242, 238, 229, 0.48) 100%
-  );
+  background: linear-gradient(158deg,
+      rgba(255, 255, 255, 0.72) 0%,
+      rgba(250, 248, 243, 0.56) 55%,
+      rgba(242, 238, 229, 0.48) 100%);
   -webkit-backdrop-filter: blur(16px) saturate(165%);
   backdrop-filter: blur(16px) saturate(165%);
   border: 1px solid rgba(255, 255, 255, 0.78);
@@ -216,8 +211,7 @@
 }
 
 .dark-theme .folder-shell {
-  filter: drop-shadow(0 14px 24px rgba(0, 0, 0, 0.45))
-          drop-shadow(0 3px 6px rgba(0, 0, 0, 0.28));
+  filter: drop-shadow(0 14px 24px rgba(0, 0, 0, 0.45)) drop-shadow(0 3px 6px rgba(0, 0, 0, 0.28));
 }
 
 .dark-theme .folder-paper-back {
@@ -232,12 +226,10 @@
 }
 
 .dark-theme .folder-glass-pocket {
-  background: linear-gradient(
-    158deg,
-    rgba(46, 51, 64, 0.68) 0%,
-    rgba(28, 31, 40, 0.54) 55%,
-    rgba(20, 22, 29, 0.48) 100%
-  );
+  background: linear-gradient(158deg,
+      rgba(46, 51, 64, 0.68) 0%,
+      rgba(28, 31, 40, 0.54) 55%,
+      rgba(20, 22, 29, 0.48) 100%);
   -webkit-backdrop-filter: blur(18px) saturate(165%);
   backdrop-filter: blur(18px) saturate(165%);
   border: 1px solid rgba(255, 255, 255, 0.2);
