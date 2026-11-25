@@ -1,0 +1,698 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+    color: #23211e;
+    background-color: #ebe6dc;
+  }
+
+  * {
+    border-color: rgba(140, 128, 110, 0.22);
+  }
+}
+
+.font-mono-num {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Engineering Workbench Background for Home Workspace */
+.ios-desk-bg {
+  background-color: #f4f2ec;
+  background-image:
+    linear-gradient(to right, rgba(140, 128, 110, 0.11) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(140, 128, 110, 0.11) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-attachment: fixed;
+}
+
+/* Smooth Theme Switch Transition for Workspace */
+.theme-smooth,
+.theme-smooth .paper-card,
+.theme-smooth .ruled-paper,
+.theme-smooth aside,
+.theme-smooth section,
+.theme-smooth input,
+.theme-smooth textarea,
+.theme-smooth select,
+.theme-smooth button,
+.theme-smooth h1,
+.theme-smooth h2,
+.theme-smooth h3,
+.theme-smooth span,
+.theme-smooth div {
+  transition-property: background-color, color, border-color, box-shadow;
+  transition-duration: 380ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Dark Theme Workspace Overrides */
+.dark-theme.ios-desk-bg {
+  background-color: #0e0f12;
+  background-image:
+    radial-gradient(
+      ellipse 72% 46% at 56% 0%,
+      rgba(130, 175, 225, 0.09) 0%,
+      rgba(255, 225, 185, 0.035) 44%,
+      transparent 75%
+    ),
+    linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 100% 100%, 24px 24px, 24px 24px;
+  color: #f4f4f5;
+}
+
+.matrix-clean-bg {
+  background-color: #f4f2ec;
+  background-image: none;
+}
+
+.dark-theme .matrix-clean-bg {
+  background-color: #0e0f12;
+  background-image: none;
+  color: #f4f4f5;
+}
+
+.floating-sheet {
+  background-color: #fcfbf8;
+  box-shadow: 0 14px 34px rgba(24, 24, 27, 0.12), 0 2px 6px rgba(24, 24, 27, 0.05);
+}
+
+.dark-theme .floating-sheet {
+  background-color: #fcfbf8;
+  color: #18181b;
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.52);
+}
+
+.dark-theme .floating-sheet input,
+.dark-theme .floating-sheet .notebook-editor,
+.dark-theme .floating-sheet .text-\[\#18181B\],
+.dark-theme .floating-sheet .text-\[\#3F3F46\] {
+  color: #18181b !important;
+}
+
+.dark-theme .paper-card {
+  background: linear-gradient(145deg,
+      rgba(30, 33, 42, 0.54) 0%,
+      rgba(18, 20, 27, 0.38) 100%);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.18),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.32),
+    0 18px 42px rgba(0, 0, 0, 0.38);
+}
+
+.dark-theme aside {
+  background: linear-gradient(165deg,
+      rgba(22, 25, 33, 0.44) 0%,
+      rgba(12, 14, 20, 0.28) 100%) !important;
+  -webkit-backdrop-filter: blur(36px) saturate(180%);
+  backdrop-filter: blur(36px) saturate(180%);
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  box-shadow:
+    inset -1px 0 1px rgba(255, 255, 255, 0.14),
+    8px 0 32px rgba(0, 0, 0, 0.28);
+}
+
+.dark-theme .ruled-paper {
+  background-color: #fcfbf8;
+  background-image: linear-gradient(to bottom, transparent 30px, #e7e2d5 31px, transparent 32px);
+  background-attachment: local;
+  color: #18181b;
+}
+
+.dark-theme .notebook-title-input,
+.dark-theme .notebook-tag-input {
+  background-color: transparent !important;
+}
+
+/* Apple Books 3D Shelf Ledge */
+.book-shelf-ledge {
+  height: 14px;
+  border-radius: 6px;
+  background: linear-gradient(to bottom, #f2ede2 0%, #ded7c8 58%, #c7bfae 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 10px 18px -6px rgba(35, 33, 30, 0.28);
+}
+
+/* Soft Diffused Hover Spotlight for Books in Night Mode */
+.book-spotlight {
+  display: none;
+}
+
+.dark-theme .book-spotlight {
+  display: block;
+  position: absolute;
+  top: -36px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 240px;
+  height: 250px;
+  pointer-events: none;
+  opacity: 0;
+  border-radius: 9999px;
+  background: radial-gradient(ellipse 60% 68% at 50% 34%,
+      rgba(255, 242, 214, 0.3) 0%,
+      rgba(255, 234, 196, 0.13) 45%,
+      transparent 76%);
+  filter: blur(22px);
+  transition: opacity 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.dark-theme .group:hover .book-spotlight {
+  opacity: 1;
+}
+
+/* Light & Dark Theme Glassmorphic Real Folder Card */
+.folder-shell {
+  filter: drop-shadow(0 10px 18px rgba(35, 33, 30, 0.14))
+          drop-shadow(0 2px 5px rgba(35, 33, 30, 0.08));
+}
+
+.folder-paper-back {
+  background-color: #f3efe6;
+  border: 1px solid rgba(140, 128, 110, 0.25);
+  box-shadow: 0 -1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.folder-paper-front {
+  background-color: #fcfbf8;
+  color: #8c806e;
+  border: 1px solid rgba(140, 128, 110, 0.28);
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.1);
+}
+
+.folder-glass-pocket {
+  background: linear-gradient(
+    158deg,
+    rgba(255, 255, 255, 0.72) 0%,
+    rgba(250, 248, 243, 0.56) 55%,
+    rgba(242, 238, 229, 0.48) 100%
+  );
+  -webkit-backdrop-filter: blur(16px) saturate(165%);
+  backdrop-filter: blur(16px) saturate(165%);
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  box-shadow:
+    inset 0 1.5px 1px rgba(255, 255, 255, 0.92),
+    inset 0 -1px 2px rgba(35, 33, 30, 0.07),
+    0 -4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.folder-pocket-notch {
+  background: rgba(140, 128, 110, 0.28);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+.folder-title {
+  color: #18181b;
+}
+
+.folder-muted {
+  color: #52525b;
+}
+
+.dark-theme .folder-shell {
+  filter: drop-shadow(0 14px 24px rgba(0, 0, 0, 0.45))
+          drop-shadow(0 3px 6px rgba(0, 0, 0, 0.28));
+}
+
+.dark-theme .folder-paper-back {
+  background-color: #262934;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.dark-theme .folder-paper-front {
+  background-color: #323644;
+  color: #a1a1aa;
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.dark-theme .folder-glass-pocket {
+  background: linear-gradient(
+    158deg,
+    rgba(46, 51, 64, 0.68) 0%,
+    rgba(28, 31, 40, 0.54) 55%,
+    rgba(20, 22, 29, 0.48) 100%
+  );
+  -webkit-backdrop-filter: blur(18px) saturate(165%);
+  backdrop-filter: blur(18px) saturate(165%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1.5px 1px rgba(255, 255, 255, 0.24),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.4),
+    0 -4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.dark-theme .folder-pocket-notch {
+  background: rgba(255, 255, 255, 0.24);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
+.dark-theme .folder-title {
+  color: #ffffff;
+}
+
+.dark-theme .folder-muted {
+  color: #b4b4bd;
+}
+
+.dark-theme aside {
+  background-color: rgba(26, 28, 35, 0.94) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  box-shadow: none !important;
+}
+
+.dark-theme input,
+.dark-theme textarea,
+.dark-theme select {
+  background-color: #181a20 !important;
+  color: #f4f4f5 !important;
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+.dark-theme input.bg-transparent,
+.dark-theme textarea.bg-transparent,
+.dark-theme select.bg-transparent {
+  background-color: transparent !important;
+}
+
+.dark-theme input.pinboard-tinted-input {
+  color: #18181b !important;
+}
+
+.dark-theme .bg-white,
+.dark-theme .bg-white\/80,
+.dark-theme .bg-white\/70,
+.dark-theme .bg-\[\#FAF9F6\],
+.dark-theme .bg-\[\#FCFBF8\],
+.dark-theme .bg-\[\#F7F6F2\],
+.dark-theme .bg-\[\#F7F4EC\],
+.dark-theme .bg-\[\#F2F1EC\],
+.dark-theme .bg-\[\#F4F3EE\] {
+  background-color: #292c36 !important;
+}
+
+.dark-theme .text-\[\#18181B\],
+.dark-theme .text-\[\#1C1C1E\],
+.dark-theme .text-\[\#23211E\],
+.dark-theme .text-\[\#3A3A3C\] {
+  color: #f4f4f5 !important;
+}
+
+.dark-theme .text-\[\#52525B\],
+.dark-theme .text-\[\#636366\],
+.dark-theme .text-\[\#6D665C\],
+.dark-theme .text-\[\#71717A\],
+.dark-theme .text-\[\#8E8E93\] {
+  color: #a1a1aa !important;
+}
+
+.dark-theme .border-\[\#E4E2DC\],
+.dark-theme .border-\[\#E2E0D8\],
+.dark-theme .border-\[\#D8D5CC\],
+.dark-theme .divide-\[\#E4E2DC\]> :not(:last-child) {
+  border-color: rgba(255, 255, 255, 0.09) !important;
+}
+
+/* Day Corner Study Desk Background (Login Only) */
+.login-workbench-day {
+  background-color: #dfd6c5;
+  background-image:
+    linear-gradient(rgba(245, 240, 230, 0.08), rgba(245, 240, 230, 0.08)),
+    url('/bg-study-morning.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Clear Light Apple Glass Card for Login (Day) */
+.login-glass-card-day {
+  background: linear-gradient(145deg,
+      rgba(255, 253, 249, 0.34) 0%,
+      rgba(252, 248, 240, 0.18) 100%);
+  backdrop-filter: blur(8px) saturate(135%);
+  -webkit-backdrop-filter: blur(8px) saturate(135%);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.9),
+    inset 0 -1px 1px rgba(140, 128, 110, 0.15),
+    0 18px 44px rgba(35, 33, 30, 0.14);
+}
+
+/* Sunset Corner Study Desk Background (Login Only) */
+.login-workbench-bg {
+  background-color: #111317;
+  background-image:
+    linear-gradient(rgba(18, 10, 14, 0.18), rgba(18, 10, 14, 0.18)),
+    url('/bg-study-sunset.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Dark Frosted Glass Card for Login */
+.login-glass-card {
+  background: linear-gradient(145deg,
+      rgba(28, 30, 36, 0.78) 0%,
+      rgba(20, 21, 26, 0.68) 100%);
+  -webkit-backdrop-filter: blur(28px) saturate(155%);
+  backdrop-filter: blur(28px) saturate(155%);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.16),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.35),
+    0 24px 56px rgba(0, 0, 0, 0.45);
+}
+
+/* Ruled notebook paper effect (padding-top: 8px places 31px line right under text baseline) */
+.ruled-paper {
+  background-color: #fcfbf8;
+  background-image: linear-gradient(to bottom, transparent 30px, #e5dfd1 31px, transparent 32px);
+  background-size: 100% 32px;
+  background-attachment: local;
+  padding-top: 8px !important;
+  line-height: 32px;
+}
+
+.notebook-editor ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+}
+
+.notebook-editor ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+}
+
+.notebook-editor hr {
+  border: 0;
+  border-top: 1px solid rgba(140, 128, 110, 0.35);
+  margin: 14px 0;
+}
+
+.ldoi-check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.25rem 0;
+}
+
+.ldoi-check-input {
+  margin-top: 0.28rem;
+  width: 15px;
+  height: 15px;
+  accent-color: #0A5386;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.dark-theme input.ldoi-check-input {
+  background-color: transparent !important;
+  border-color: rgba(24, 24, 27, 0.35) !important;
+}
+
+.ldoi-check-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.ldoi-check-row[data-checked="true"] .ldoi-check-text {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+
+/* Open Notebook Light & Dark Theme Panes & Toolbar */
+.notebook-pages-pane {
+  background-color: #f7f4ec;
+  border-color: #d6d0c2;
+}
+
+.notebook-editor-pane {
+  background-color: #fcfbf8;
+}
+
+.notebook-page-item {
+  background-color: rgba(255, 255, 255, 0.72);
+  border-color: #e4e2dc;
+}
+
+.notebook-page-item:hover {
+  background-color: #ffffff;
+}
+
+.notebook-page-item-active {
+  background-color: #ffffff;
+  border-color: #0a5386;
+}
+
+.notebook-toolbar {
+  background-color: #efeae0;
+  border: 1px solid #ded8ca;
+}
+
+.notebook-tool-btn {
+  color: #18181b;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.notebook-tool-btn:hover {
+  background-color: #ffffff;
+}
+
+.notebook-cover-shell {
+  background: linear-gradient(145deg, #35302a 0%, #24201c 55%, #171411 100%);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.12),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.55),
+    0 22px 50px rgba(0, 0, 0, 0.45);
+}
+
+.dark-theme .notebook-cover-shell {
+  background: linear-gradient(145deg, #3c3630 0%, #28231f 55%, #191512 100%);
+  border-color: rgba(255, 232, 200, 0.16);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 232, 200, 0.14),
+    inset 0 -2px 6px rgba(0, 0, 0, 0.65),
+    0 26px 60px rgba(0, 0, 0, 0.72);
+}
+
+.notebook-spread {
+  box-shadow:
+    -3px 0 0 #e5dfd2,
+    -6px 0 0 #cfc8b8,
+    3px 0 0 #e5dfd2,
+    6px 0 0 #cfc8b8,
+    inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+}
+
+.dark-theme .notebook-spread {
+  color: #18181b;
+}
+
+.dark-theme .notebook-spread input,
+.dark-theme .notebook-spread .notebook-editor,
+.dark-theme .notebook-spread .text-\[\#18181B\],
+.dark-theme .notebook-spread .text-\[\#1C1C1E\],
+.dark-theme .notebook-spread .text-\[\#23211E\],
+.dark-theme .notebook-spread .text-\[\#3A3A3C\],
+.dark-theme .notebook-spread .notebook-tool-btn {
+  color: #18181b !important;
+}
+
+.dark-theme .notebook-spread .bg-white,
+.dark-theme .notebook-spread .bg-white\/80,
+.dark-theme .notebook-spread .bg-\[\#FAF9F6\],
+.dark-theme .notebook-spread .bg-\[\#FCFBF8\] {
+  background-color: #ffffff !important;
+}
+
+/* Frosted Glassmorphic Card */
+.paper-card {
+  background: linear-gradient(145deg,
+      rgba(255, 255, 255, 0.56) 0%,
+      rgba(255, 255, 255, 0.34) 100%);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.85),
+    inset 0 -1px 1px rgba(35, 33, 30, 0.06),
+    0 16px 38px rgba(35, 33, 30, 0.12);
+}
+
+@keyframes workspaceEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-workspace-enter {
+  animation: workspaceEnter 260ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* iOS tactile button press */
+.ios-press {
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.ios-press:active {
+  transform: scale(0.975);
+}
+
+/* Cool Ultra-Thin Glassmorphic Scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(10, 83, 134, 0.38) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(10, 83, 134, 0.42), rgba(19, 63, 71, 0.52));
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #0A5386, #133F47);
+}
+
+.dark-theme * {
+  scrollbar-color: rgba(125, 211, 252, 0.35) transparent;
+}
+
+.dark-theme *::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0.35), rgba(45, 212, 191, 0.42));
+}
+
+/* Print stylesheet for Quotations & Project Proposals */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .print-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+}
+
+/* Animated Clear-All Bin Button (Pinboard Toolbar) */
+.clear-all-bin-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background-color: rgb(20, 20, 20);
+  border: none;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.16);
+  cursor: pointer;
+  transition:
+    width 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.26s ease,
+    gap 0.3s ease;
+  overflow: hidden;
+  position: relative;
+  gap: 1px;
+  flex-shrink: 0;
+}
+
+.clear-all-bin-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
+.clear-all-bin-btn .svgIcon {
+  width: 10px;
+  transition:
+    width 0.34s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.clear-all-bin-btn .svgIcon path {
+  fill: white;
+}
+
+.clear-all-bin-btn .bin-top {
+  transform-origin: bottom right;
+}
+
+.clear-all-bin-btn::before {
+  position: absolute;
+  top: 4px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  line-height: 1.1;
+  content: attr(data-label);
+  color: white;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-16px);
+  transition:
+    opacity 0.24s ease,
+    transform 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.clear-all-bin-btn:hover:not(:disabled),
+.clear-all-bin-btn.is-confirming:not(:disabled) {
+  width: 108px;
+  border-radius: 9999px;
+  background-color: rgb(255, 69, 69);
+  align-items: center;
+  gap: 0;
+}
+
+.clear-all-bin-btn:hover:not(:disabled) .bin-bottom,
+.clear-all-bin-btn.is-confirming:not(:disabled) .bin-bottom {
+  width: 22px;
+  transform: translateY(14px);
+}
+
+.clear-all-bin-btn:hover:not(:disabled) .bin-top,
+.clear-all-bin-btn.is-confirming:not(:disabled) .bin-top {
+  width: 22px;
+  transform: translateY(14px) rotate(160deg);
+}
+
+.clear-all-bin-btn:hover:not(:disabled)::before,
+.clear-all-bin-btn.is-confirming:not(:disabled)::before {
+  opacity: 1;
+  transform: translateY(0);
+}
