@@ -10,7 +10,7 @@ import {
   Moon,
   Sun,
 } from 'lucide-react';
-import { TEAM_MEMBERS, getMemberColor, getMemberInitials } from '../constants';
+import { getMemberColor, getMemberInitials } from '../constants';
 import { useLdoi } from '../context/LdoiContext';
 import type { ActiveTab } from '../types';
 import { LdoiLogo } from './LdoiLogo';
@@ -42,7 +42,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   darkMode,
   onToggleDarkMode,
 }) => {
-  const { currentUser, onlineMembers, signOut } = useLdoi();
+  const { currentUser, signOut } = useLdoi();
 
   return (
     <aside
@@ -61,7 +61,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 Learning Hub
               </div>
               <div className="text-[11px] font-medium text-[#8E8E93]">
-                Sajitha &amp; Dhani
+                Sajitha&apos;s Study Space
               </div>
             </div>
           </div>
@@ -111,39 +111,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             );
           })}
         </nav>
-
-        {/* Live Team Presence Widget */}
-        <div className="hidden md:block mx-3 mt-3 p-3.5 rounded-2xl bg-[#F7F6F2] border border-[#E2E0D8]">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-[#8E8E93] mb-2.5">
-            Team Online
-          </div>
-          <div className="space-y-2">
-            {TEAM_MEMBERS.map((m) => {
-              const isOnline = onlineMembers.includes(m.name);
-              const isMe = currentUser?.name === m.name;
-              return (
-                <div key={m.name} className="flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold text-white"
-                      style={{ backgroundColor: m.accentHex }}
-                    >
-                      {m.initials}
-                    </span>
-                    <span className={isMe ? 'font-semibold text-[#1C1C1E]' : 'text-[#3A3A3C]'}>
-                      {m.name} {isMe ? '(You)' : ''}
-                    </span>
-                  </div>
-                  <span
-                    className={`w-2.5 h-2.5 rounded-xs ${isOnline ? 'bg-[#34C759]' : 'bg-[#D1D1D6]'
-                      }`}
-                    title={isOnline ? 'Online' : 'Offline'}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
       </div>
 
       {/* Footer Profile Card */}
