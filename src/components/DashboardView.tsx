@@ -8,10 +8,7 @@ import {
   Circle,
   Clock,
   GraduationCap,
-  Pause,
-  Play,
   Plus,
-  RotateCcw,
   Trash2,
 } from 'lucide-react';
 import { DAYS_OF_WEEK, formatDateShort, getDeadlineUrgency } from '../constants';
@@ -25,9 +22,6 @@ interface DashboardViewProps {
   onNavigate: (tab: ActiveTab) => void;
   onOpenProject: (projectId: string) => void;
 }
-
-const FOCUS_SECONDS = 25 * 60;
-const BREAK_SECONDS = 5 * 60;
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigate,
@@ -56,42 +50,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const timer = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(timer);
   }, []);
-
-  // Pomodoro Focus Timer
-  const [pomodoroMode, setPomodoroMode] = useState<'focus' | 'break'>('focus');
-  const [secondsLeft, setSecondsLeft] = useState(FOCUS_SECONDS);
-  const [timerRunning, setTimerRunning] = useState(false);
-  const [completedSessions, setCompletedSessions] = useState(0);
-
-  useEffect(() => {
-    if (!timerRunning) return;
-    const id = window.setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          setTimerRunning(false);
-          if (pomodoroMode === 'focus') {
-            setCompletedSessions((c) => c + 1);
-            setPomodoroMode('break');
-            return BREAK_SECONDS;
-          } else {
-            setPomodoroMode('focus');
-            return FOCUS_SECONDS;
-          }
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [timerRunning, pomodoroMode]);
-
-  const pomoMins = String(Math.floor(secondsLeft / 60)).padStart(2, '0');
-  const pomoSecs = String(secondsLeft % 60).padStart(2, '0');
-
-  const switchPomodoroMode = (mode: 'focus' | 'break') => {
-    setTimerRunning(false);
-    setPomodoroMode(mode);
-    setSecondsLeft(mode === 'focus' ? FOCUS_SECONDS : BREAK_SECONDS);
-  };
 
   // Quick study goal input
   const [newGoalTitle, setNewGoalTitle] = useState('');
@@ -188,8 +146,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           />
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-              <span className="text-xs font-bold uppercase tracking-wider text-[#0A5386]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#9B5B76] shrink-0" />
+              <span className="text-xs font-bold uppercase tracking-wider text-[#9B5B76]">
                 {weekday}
               </span>
               <span className="text-xs font-medium text-[#8E8E93]">· {dateLabel}</span>
@@ -199,105 +157,45 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </h1>
           </div>
         </div>
-
-        {/* Compact Pomodoro Focus Timer */}
-        <div className="paper-card rounded-2xl px-4 py-2.5 flex flex-wrap items-center gap-3 border border-[#E2E0D8] shadow-xs">
-          <div className="flex items-center gap-1 bg-black/5 rounded-lg p-0.5">
-            <button
-              type="button"
-              onClick={() => switchPomodoroMode('focus')}
-              className={`px-2 py-1 text-[11px] font-semibold rounded-md transition-colors ${
-                pomodoroMode === 'focus'
-                  ? 'bg-[#0A5386] text-white'
-                  : 'text-[#6E6E73] hover:text-[#1C1C1E]'
-              }`}
-            >
-              Focus 25m
-            </button>
-            <button
-              type="button"
-              onClick={() => switchPomodoroMode('break')}
-              className={`px-2 py-1 text-[11px] font-semibold rounded-md transition-colors ${
-                pomodoroMode === 'break'
-                  ? 'bg-[#1B5E5A] text-white'
-                  : 'text-[#6E6E73] hover:text-[#1C1C1E]'
-              }`}
-            >
-              Break 5m
-            </button>
-          </div>
-
-          <div className="font-mono-num text-lg font-bold tracking-tight text-[#1C1C1E] min-w-[58px] text-center">
-            {pomoMins}:{pomoSecs}
-          </div>
-
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setTimerRunning((r) => !r)}
-              className="ios-press w-8 h-8 rounded-xl bg-[#0A5386] hover:bg-[#0C64A1] text-white flex items-center justify-center"
-              title={timerRunning ? 'Pause Timer' : 'Start Timer'}
-            >
-              {timerRunning ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setTimerRunning(false);
-                setSecondsLeft(pomodoroMode === 'focus' ? FOCUS_SECONDS : BREAK_SECONDS);
-              }}
-              className="ios-press w-8 h-8 rounded-xl border border-[#E2E0D8] text-[#6E6E73] hover:text-[#1C1C1E] flex items-center justify-center"
-              title="Reset Timer"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {completedSessions > 0 && (
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700">
-              {completedSessions} done
-            </span>
-          )}
-        </div>
       </div>
 
       {/* Summary Widget Strip */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         <button
           type="button"
-          onClick={() => onNavigate('timetable')}
+          onClick={() => onNavigate('tracker')}
           className="paper-card rounded-2xl p-4 flex items-center gap-3.5 text-left hover:shadow-sm transition-shadow"
         >
           <div className="w-10 h-10 rounded-xl bg-[#133F47] text-white flex items-center justify-center shrink-0">
             <CalendarDays className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-semibold text-[#8E8E93]">Today&apos;s Blocks</div>
+            <div className="text-[11px] font-semibold text-[#8E8E93]">Daily Planner</div>
             <div className="text-xl font-bold font-mono-num text-[#1C1C1E]">
-              {todaySlots.length}
+              Plan &amp; Check
             </div>
           </div>
         </button>
 
         <button
           type="button"
-          onClick={() => onNavigate('subjects')}
+          onClick={() => onNavigate('matrix')}
           className="paper-card rounded-2xl p-4 flex items-center gap-3.5 text-left hover:shadow-sm transition-shadow"
         >
           <div className="w-10 h-10 rounded-xl bg-[#254454] text-white flex items-center justify-center shrink-0">
             <BookMarked className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-[11px] font-semibold text-[#8E8E93]">Active Subjects</div>
+            <div className="text-[11px] font-semibold text-[#8E8E93]">Study Matrix</div>
             <div className="text-xl font-bold font-mono-num text-[#1C1C1E]">
-              {activeSubjects.length}
+              Open
             </div>
           </div>
         </button>
 
         <button
           type="button"
-          onClick={() => onNavigate('exams')}
+          onClick={() => onNavigate('timer')}
           className="paper-card rounded-2xl p-4 flex items-center gap-3.5 text-left hover:shadow-sm transition-shadow"
         >
           <div className="w-10 h-10 rounded-xl bg-[#8B1E1E] text-white flex items-center justify-center shrink-0">
@@ -342,10 +240,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <button
               type="button"
-              onClick={() => onNavigate('timetable')}
+              onClick={() => onNavigate('tracker')}
               className="text-xs font-semibold text-[#0A5386] hover:underline inline-flex items-center gap-1"
             >
-              Full Week <ArrowRight className="w-3.5 h-3.5" />
+              Daily Planner <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
@@ -454,10 +352,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
             <button
               type="button"
-              onClick={() => onNavigate('exams')}
+              onClick={() => onNavigate('tracker')}
               className="text-xs font-semibold text-[#8B1E1E] hover:underline inline-flex items-center gap-1"
             >
-              Manage All <ArrowRight className="w-3.5 h-3.5" />
+              Daily Planner <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
 
@@ -527,10 +425,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <h2 className="text-sm font-bold text-[#1C1C1E]">Active Subjects</h2>
           <button
             type="button"
-            onClick={() => onNavigate('subjects')}
+            onClick={() => onNavigate('matrix')}
             className="text-xs font-semibold text-[#0A5386] hover:underline inline-flex items-center gap-1"
           >
-            All Subjects <ArrowRight className="w-3.5 h-3.5" />
+            Open Matrix <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
 

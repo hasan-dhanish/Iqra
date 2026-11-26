@@ -102,14 +102,14 @@
 
 .dark-theme .paper-card {
   background: linear-gradient(145deg,
-      rgba(30, 33, 42, 0.54) 0%,
-      rgba(18, 20, 27, 0.38) 100%);
-  -webkit-backdrop-filter: blur(28px) saturate(170%);
-  backdrop-filter: blur(28px) saturate(170%);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+      rgba(34, 28, 42, 0.68) 0%,
+      rgba(22, 18, 28, 0.54) 100%);
+  -webkit-backdrop-filter: blur(28px) saturate(155%);
+  backdrop-filter: blur(28px) saturate(155%);
+  border: 1px solid rgba(255, 228, 240, 0.12);
   box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.18),
-    inset 0 -1px 1px rgba(0, 0, 0, 0.32),
+    inset 0 1px 1px rgba(255, 228, 240, 0.10),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.35),
     0 18px 42px rgba(0, 0, 0, 0.38);
 }
 
@@ -125,11 +125,11 @@
     8px 0 32px rgba(0, 0, 0, 0.28);
 }
 
-.dark-theme .ruled-paper {
-  background-color: #fcfbf8;
-  background-image: linear-gradient(to bottom, transparent 30px, #e7e2d5 31px, transparent 32px);
+.dark-theme .notebook-spread .ruled-paper {
+  background-color: #1c1724;
+  background-image: linear-gradient(to bottom, transparent 30px, rgba(255, 228, 240, 0.08) 31px, transparent 32px);
   background-attachment: local;
-  color: #18181b;
+  color: #f4f4f5;
 }
 
 .dark-theme .notebook-title-input,
@@ -145,6 +145,13 @@
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.85),
     0 10px 18px -6px rgba(35, 33, 30, 0.28);
+}
+
+.dark-theme .book-shelf-ledge {
+  background: linear-gradient(to bottom, #2d2537 0%, #1e1826 58%, #140f1a 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 228, 240, 0.14),
+    0 12px 22px -6px rgba(0, 0, 0, 0.55);
 }
 
 /* Soft Diffused Hover Spotlight for Books in Night Mode */
@@ -289,13 +296,19 @@
 .dark-theme .bg-white,
 .dark-theme .bg-white\/80,
 .dark-theme .bg-white\/70,
+.dark-theme .bg-white\/60,
+.dark-theme .bg-white\/50,
+.dark-theme .bg-white\/45,
+.dark-theme .bg-white\/40,
+.dark-theme .bg-white\/35,
+.dark-theme .bg-white\/30,
 .dark-theme .bg-\[\#FAF9F6\],
 .dark-theme .bg-\[\#FCFBF8\],
 .dark-theme .bg-\[\#F7F6F2\],
 .dark-theme .bg-\[\#F7F4EC\],
 .dark-theme .bg-\[\#F2F1EC\],
 .dark-theme .bg-\[\#F4F3EE\] {
-  background-color: #292c36 !important;
+  background-color: rgba(36, 30, 44, 0.72) !important;
 }
 
 .dark-theme .text-\[\#18181B\],
@@ -492,7 +505,35 @@
 }
 
 .dark-theme .notebook-spread {
-  color: #18181b;
+  color: #f4f4f5;
+  box-shadow:
+    -3px 0 0 #261f30,
+    -6px 0 0 #1b1523,
+    3px 0 0 #261f30,
+    6px 0 0 #1b1523,
+    inset 0 0 0 1px rgba(255, 228, 240, 0.10);
+}
+
+.dark-theme .notebook-spread .notebook-pages-pane {
+  background: #17121f !important;
+  border-color: rgba(255, 228, 240, 0.10) !important;
+}
+
+.dark-theme .notebook-spread .notebook-editor-pane {
+  background: #1c1724 !important;
+}
+
+.dark-theme .notebook-spread .notebook-toolbar {
+  background: rgba(34, 28, 44, 0.9) !important;
+  border-color: rgba(255, 228, 240, 0.10) !important;
+}
+
+.dark-theme .notebook-spread .notebook-page-item:hover {
+  background: rgba(255, 228, 240, 0.06) !important;
+}
+
+.dark-theme .notebook-spread .notebook-page-item-active {
+  background: rgba(155, 91, 118, 0.22) !important;
 }
 
 .dark-theme .notebook-spread input,
@@ -502,28 +543,121 @@
 .dark-theme .notebook-spread .text-\[\#23211E\],
 .dark-theme .notebook-spread .text-\[\#3A3A3C\],
 .dark-theme .notebook-spread .notebook-tool-btn {
-  color: #18181b !important;
+  color: #f4f4f5 !important;
 }
 
 .dark-theme .notebook-spread .bg-white,
 .dark-theme .notebook-spread .bg-white\/80,
 .dark-theme .notebook-spread .bg-\[\#FAF9F6\],
 .dark-theme .notebook-spread .bg-\[\#FCFBF8\] {
-  background-color: #ffffff !important;
+  background-color: #231d2b !important;
 }
 
-/* Frosted Glassmorphic Card */
+/* Soft Warm Blush-Oat Frosted Glassmorphic Card (Light Mode) */
 .paper-card {
   background: linear-gradient(145deg,
-      rgba(255, 255, 255, 0.56) 0%,
-      rgba(255, 255, 255, 0.34) 100%);
-  -webkit-backdrop-filter: blur(28px) saturate(170%);
-  backdrop-filter: blur(28px) saturate(170%);
-  border: 1px solid rgba(255, 255, 255, 0.62);
+      rgba(247, 240, 242, 0.78) 0%,
+      rgba(241, 232, 235, 0.64) 100%);
+  -webkit-backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(24px) saturate(140%);
+  border: 1px solid rgba(214, 196, 203, 0.72);
   box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.85),
-    inset 0 -1px 1px rgba(35, 33, 30, 0.06),
-    0 16px 38px rgba(35, 33, 30, 0.12);
+    inset 0 1px 1px rgba(255, 250, 252, 0.65),
+    inset 0 -1px 1px rgba(120, 95, 105, 0.06),
+    0 12px 30px rgba(80, 58, 68, 0.08);
+}
+
+.ios-desk-bg:not(.dark-theme) aside {
+  background: linear-gradient(165deg,
+      rgba(246, 238, 240, 0.84) 0%,
+      rgba(240, 230, 234, 0.74) 100%) !important;
+  border-color: rgba(214, 196, 203, 0.72) !important;
+}
+
+@keyframes flipTopFold {
+  0% {
+    transform: rotateX(0deg);
+  }
+  100% {
+    transform: rotateX(-90deg);
+  }
+}
+
+@keyframes flipBottomUnfold {
+  0% {
+    transform: rotateX(90deg);
+  }
+  100% {
+    transform: rotateX(0deg);
+  }
+}
+
+.flip-top-fold {
+  transform-origin: bottom center;
+  backface-visibility: hidden;
+  animation: flipTopFold 180ms ease-in forwards;
+}
+
+.flip-bottom-unfold {
+  transform-origin: top center;
+  backface-visibility: hidden;
+  animation: flipBottomUnfold 180ms ease-out 180ms both;
+}
+
+/* Cute Flip Clock Tile (Light & Dark Mode) */
+.flip-clock-tile {
+  background-color: #f5ecef;
+  border-color: rgba(155, 91, 118, 0.28);
+}
+
+.flip-clock-tile-accent {
+  background-color: #efe3e8;
+  border-color: rgba(155, 91, 118, 0.36);
+}
+
+.dark-theme .flip-clock-tile {
+  background-color: #231d2b;
+  border-color: rgba(232, 168, 194, 0.22);
+}
+
+.dark-theme .flip-clock-tile-accent {
+  background-color: #2d2234;
+  border-color: rgba(232, 168, 194, 0.32);
+}
+
+.dark-theme .flip-clock-digit-accent {
+  color: #e8a8c2 !important;
+}
+
+.spidey-chat-card {
+  background: rgba(248, 241, 244, 0.96);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(214, 196, 203, 0.85);
+}
+
+.dark-theme .spidey-chat-card {
+  background: rgba(26, 21, 33, 0.96);
+  border: 1px solid rgba(255, 228, 240, 0.16);
+}
+
+@keyframes bunnyJumpUp {
+  0% {
+    transform: translateY(14px) scale(0.92);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(-2px) scale(1.02);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.bunny-jump-up {
+  animation: bunnyJumpUp 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes workspaceEnter {

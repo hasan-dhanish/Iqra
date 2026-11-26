@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowRight, CheckCircle2, Lock, Moon, Sun } from 'lucide-react';
+import { TEAM_MEMBERS } from '../constants';
 import { useLdoi } from '../context/LdoiContext';
 import type { MemberName } from '../types';
 import { LdoiLogo } from './LdoiLogo';
@@ -16,7 +17,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   onToggleDarkMode,
 }) => {
   const { signIn, quickLocalSignIn, syncMode } = useLdoi();
-  const memberName: MemberName = 'Sajitha';
+  const [memberName, setMemberName] = useState<MemberName>('Sajitha');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -81,11 +82,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         )}
 
         <div
-          className={`w-full sm:w-auto rounded-2xl px-3.5 py-2.5 backdrop-blur-2xl backdrop-saturate-150 transition-all duration-300 ${
-            darkMode
-              ? 'login-glass-card text-zinc-100'
-              : 'login-glass-card-day text-[#23211E]'
-          }`}
+          className={`w-full sm:w-auto rounded-2xl px-3.5 py-2.5 backdrop-blur-2xl backdrop-saturate-150 transition-all duration-300 ${darkMode
+            ? 'login-glass-card text-zinc-100'
+            : 'login-glass-card-day text-[#23211E]'
+            }`}
         >
           {unlocking ? (
             <div className="px-6 py-1.5 flex items-center justify-center gap-2.5">
@@ -103,16 +103,44 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               <div className="flex items-center gap-2.5 pr-1">
                 <LdoiLogo size={30} />
                 <span className="text-xs font-bold tracking-tight whitespace-nowrap">
-                  Learning Hub
+                  Iqra Desk
                 </span>
+              </div>
+
+              {/* Compact Profile Toggle (Sajitha / Dhani) */}
+              <div
+                className={`flex items-center rounded-xl p-0.5 border ${darkMode
+                  ? 'bg-black/30 border-white/10'
+                  : 'bg-white/45 border-white/70'
+                  }`}
+              >
+                {TEAM_MEMBERS.map((m) => {
+                  const selected = memberName === m.name;
+                  return (
+                    <button
+                      key={m.name}
+                      type="button"
+                      onClick={() => setMemberName(m.name)}
+                      className={`ios-press px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${selected
+                        ? darkMode
+                          ? 'bg-white/20 text-white shadow-xs'
+                          : 'bg-white/90 text-[#23211E] shadow-xs'
+                        : darkMode
+                          ? 'text-zinc-400 hover:text-white'
+                          : 'text-[#524C44] hover:text-[#23211E]'
+                        }`}
+                    >
+                      {m.name}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Password Input + Submit */}
               <div className="relative flex items-center flex-1 sm:flex-initial min-w-[170px]">
                 <Lock
-                  className={`w-3.5 h-3.5 absolute left-3 pointer-events-none ${
-                    darkMode ? 'text-zinc-400' : 'text-[#8C806E]'
-                  }`}
+                  className={`w-3.5 h-3.5 absolute left-3 pointer-events-none ${darkMode ? 'text-zinc-400' : 'text-[#8C806E]'
+                    }`}
                 />
                 <input
                   type="password"
@@ -122,11 +150,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                     if (error) setError('');
                   }}
                   placeholder="Password..."
-                  className={`w-full sm:w-44 pl-8 pr-9 py-1.5 text-xs rounded-xl focus:outline-none focus:ring-2 ${
-                    darkMode
-                      ? 'bg-black/35 border border-white/15 text-white placeholder:text-zinc-400 focus:border-[#388BFD] focus:ring-[#388BFD]/25'
-                      : 'bg-white/70 border border-white/80 text-[#23211E] placeholder:text-[#787065] focus:bg-white/90 focus:border-[#2E74B5]'
-                  }`}
+                  className={`w-full sm:w-44 pl-8 pr-9 py-1.5 text-xs rounded-xl focus:outline-none focus:ring-2 ${darkMode
+                    ? 'bg-black/35 border border-white/15 text-white placeholder:text-zinc-400 focus:border-[#388BFD] focus:ring-[#388BFD]/25'
+                    : 'bg-white/70 border border-white/80 text-[#23211E] placeholder:text-[#787065] focus:bg-white/90 focus:border-[#2E74B5]'
+                    }`}
                 />
                 <button
                   type="submit"
@@ -143,11 +170,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 type="button"
                 onClick={onToggleDarkMode}
                 title={darkMode ? 'Switch to Sunrise (Day)' : 'Switch to Sunset (Night)'}
-                className={`ios-press p-2 rounded-xl border transition-colors ${
-                  darkMode
-                    ? 'bg-white/10 border-white/15 text-zinc-200 hover:bg-white/20 hover:text-white'
-                    : 'bg-white/60 border-white/80 text-[#23211E] hover:bg-white/90'
-                }`}
+                className={`ios-press p-2 rounded-xl border transition-colors ${darkMode
+                  ? 'bg-white/10 border-white/15 text-zinc-200 hover:bg-white/20 hover:text-white'
+                  : 'bg-white/60 border-white/80 text-[#23211E] hover:bg-white/90'
+                  }`}
               >
                 {darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
               </button>

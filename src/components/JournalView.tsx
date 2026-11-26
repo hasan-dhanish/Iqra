@@ -6,13 +6,13 @@ import {
   ArrowLeft,
   Bold,
   BookOpen,
+  Calculator,
   Check,
   CheckSquare,
   Highlighter,
   Italic,
   List,
   ListOrdered,
-  Minus,
   Plus,
   Search,
   Strikethrough,
@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { formatDateShort } from '../constants';
 import { useLdoi } from '../context/LdoiContext';
+import { handleInlineMathKeyDown, isAutoMathEnabled, setAutoMathEnabled } from '../lib/mathEval';
 import {
   getJournalBookColor as getEntryBookColor,
   getJournalBookName as getEntryBookName,
@@ -77,6 +78,7 @@ export const JournalView: React.FC = () => {
   };
   const [tagInput, setTagInput] = useState('');
   const [fontColor, setFontColor] = useState('#18181B');
+  const [autoMath, setAutoMath] = useState(() => isAutoMathEnabled());
   const editorRef = useRef<HTMLDivElement | null>(null);
   const savedRangeRef = useRef<Range | null>(null);
   const [deleteBookTarget, setDeleteBookTarget] = useState<{
@@ -432,6 +434,7 @@ export const JournalView: React.FC = () => {
   };
 
   const handleEditorKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (handleInlineMathKeyDown(e, handleContentChange)) return;
     if (e.key !== 'Enter' || e.shiftKey) return;
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return;
@@ -1195,17 +1198,40 @@ export const JournalView: React.FC = () => {
                   >
                     <Highlighter className="w-3.5 h-3.5" />
                   </button>
-                  <button
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      execFormat('insertHorizontalRule');
-                    }}
-                    title="Insert Divider Line"
-                    className="notebook-tool-btn p-1.5 rounded-full"
+
+                  <div className="w-px h-4 bg-current opacity-15 mx-1" />
+
+                  <label
+                    className="inline-flex items-center gap-1.5 px-1.5 py-0.5 cursor-pointer select-none"
+                    title={
+                      autoMath
+                        ? 'Auto-Calculate on "=" is ON (click to turn off)'
+                        : 'Auto-Calculate on "=" is OFF (click to turn on)'
+                    }
                   >
-                    <Minus className="w-3.5 h-3.5" />
-                  </button>
+                    <Calculator className="w-3.5 h-3.5 opacity-75" />
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={autoMath}
+                      onClick={() => {
+                        const next = !autoMath;
+                        setAutoMath(next);
+                        setAutoMathEnabled(next);
+                      }}
+                      className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-[#9B5B76]/35 transition-colors duration-200"
+                      style={{
+                        backgroundColor: autoMath ? '#9B5B76' : 'rgba(155, 91, 118, 0.28)',
+                      }}
+                    >
+                      <span
+                        className={`inline-block h-3 w-3 transform rounded-full shadow-xs transition-transform duration-200 ${
+                          autoMath ? 'translate-x-3.5' : 'translate-x-0.5'
+                        }`}
+                        style={{ backgroundColor: '#ffffff' }}
+                      />
+                    </button>
+                  </label>
 
                   <div className="w-px h-4 bg-current opacity-15 mx-1" />
 

@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   Bold,
   BookOpen,
+  Calculator,
   Check,
   CheckSquare,
   Download,
@@ -34,6 +35,7 @@ import {
 } from 'lucide-react';
 import { getMemberColor } from '../constants';
 import { useLdoi } from '../context/LdoiContext';
+import { handleInlineMathKeyDown, isAutoMathEnabled, setAutoMathEnabled } from '../lib/mathEval';
 import {
   convertJournalHtmlToPinPage,
   getJournalBookName,
@@ -487,6 +489,9 @@ const FloatingPagePin = React.forwardRef<
           suppressContentEditableWarning
           onMouseUp={saveSelection}
           onKeyUp={saveSelection}
+          onKeyDown={(e) => {
+            handleInlineMathKeyDown(e, (html) => scheduleSave({ bodyHtml: html }));
+          }}
           onInput={(e) => {
             saveSelection();
             scheduleSave({ bodyHtml: e.currentTarget.innerHTML });
@@ -615,6 +620,7 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
   const undoStackRef = useRef<BoardSnapshot[]>([]);
   const redoStackRef = useRef<BoardSnapshot[]>([]);
   const [historyCounts, setHistoryCounts] = useState({ undo: 0, redo: 0 });
+  const [autoMath, setAutoMath] = useState(() => isAutoMathEnabled());
   const pendingDeleteTimersRef = useRef<Record<string, { kind: 'doc' | 'note'; timer: number }>>(
     {}
   );
@@ -636,6 +642,7 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
   const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [mouseWorld, setMouseWorld] = useState<{ x: number; y: number } | null>(null);
   const [confirmClearAll, setConfirmClearAll] = useState(false);
+  const [showPinMenu, setShowPinMenu] = useState(false);
 
   const pageHandlesRef = useRef<Record<string, FloatingPageHandle | null>>({});
   const [cardSizes, setCardSizes] = useState<Record<string, { w: number; h: number }>>({});
@@ -1965,35 +1972,84 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
         </div>
       )}
 
-      {/* Fixed Floating Pill Bar (Bottom-Center) */}
-      <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 paper-card rounded-full px-2 py-1.5 shadow-2xl border border-[#E4E2DC] flex items-center gap-1.5 max-w-[95vw] overflow-x-auto backdrop-blur-md transition-all duration-300 ease-out">
+      {/* Fixed Floating Pill Bar (Bottom-Center, fully visible with compact icons + Pin dropdown) */}
+      <div className="fixed bottom-3 sm:bottom-5 left-1/2 -translate-x-1/2 z-40 paper-card rounded-full px-1.5 sm:px-2.5 py-1 sm:py-1.5 shadow-2xl border border-[#E4E2DC] flex items-center gap-1 sm:gap-1.5 max-w-[96vw] overflow-visible backdrop-blur-md transition-all duration-300 ease-out">
         <button
           type="button"
           onClick={handleInstantAddPage}
-          className="ios-press shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold bg-[#0A5386] text-white rounded-full"
+          title="Add Page"
+          className="ios-press shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#0A5386] text-white rounded-full"
         >
           <StickyNote className="w-3.5 h-3.5" />
-          Add Page
+          <span className="hidden sm:inline">Page</span>
         </button>
 
         <button
           type="button"
           onClick={() => setShowImportModal(true)}
-          title="Import pages from Notebooks"
-          className="ios-press shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#1B5E5A] text-white rounded-full"
+          title="Import from Notebooks"
+          className="ios-press shrink-0 inline-flex items-center justify-center p-2 rounded-full bg-[#1B5E5A] text-white"
         >
           <BookOpen className="w-3.5 h-3.5" />
-          Import
         </button>
 
         <button
           type="button"
           onClick={handleAddZone}
-          className="ios-press shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-[#254454] text-white rounded-full"
+          title="Add Zone"
+          className="ios-press shrink-0 inline-flex items-center justify-center p-2 rounded-full bg-[#254454] text-white"
         >
           <Frame className="w-3.5 h-3.5" />
-          Add Zone
         </button>
+
+        {/* Pin Dropdown (Image / File) */}
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowPinMenu((v) => !v)}
+            title="Pin Image or File"
+            className={`ios-press inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-full ${
+              showPinMenu
+                ? 'bg-[#254454] text-white'
+                : 'bg-white/80 border border-[#E4E2DC] text-[#18181B]'
+            }`}
+          >
+            <ImageIcon className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Pin</span>
+          </button>
+
+          {showPinMenu && (
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-44 paper-card rounded-2xl p-1.5 shadow-2xl border border-[#E4E2DC] flex flex-col gap-1 z-50 animate-workspace-enter">
+              <label className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-[#18181B] hover:bg-black/5 cursor-pointer">
+                <ImageIcon className="w-3.5 h-3.5 text-[#0A5386]" />
+                Pin Image / Inspo
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    setShowPinMenu(false);
+                    handleUploadInspoOrFile(e, 'Spec');
+                  }}
+                />
+              </label>
+              <label className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-[#18181B] hover:bg-black/5 cursor-pointer">
+                <Upload className="w-3.5 h-3.5 text-[#1B5E5A]" />
+                Pin Any File
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => {
+                    setShowPinMenu(false);
+                    handleUploadInspoOrFile(e, 'Other');
+                  }}
+                />
+              </label>
+            </div>
+          )}
+        </div>
+
+        <div className="w-px h-5 bg-[#E4E2DC] mx-0.5 shrink-0" />
 
         <button
           type="button"
@@ -2029,27 +2085,6 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
           <Pen className="w-3.5 h-3.5" />
         </button>
 
-        <label className="ios-press shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold bg-[#254454] text-white rounded-full cursor-pointer">
-          <ImageIcon className="w-3.5 h-3.5" />
-          Pin Design Inspo
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => handleUploadInspoOrFile(e, 'Spec')}
-          />
-        </label>
-
-        <label className="ios-press shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold bg-white/80 border border-[#E4E2DC] text-[#18181B] rounded-full cursor-pointer">
-          <Upload className="w-3.5 h-3.5" />
-          Pin File
-          <input
-            type="file"
-            className="hidden"
-            onChange={(e) => handleUploadInspoOrFile(e, 'Other')}
-          />
-        </label>
-
         <div className="w-px h-5 bg-[#E4E2DC] mx-0.5 shrink-0" />
 
         <button
@@ -2070,6 +2105,38 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
         >
           <Redo2 className="w-3.5 h-3.5" />
         </button>
+
+        <label
+          className="inline-flex items-center gap-1.5 px-1.5 py-0.5 shrink-0 cursor-pointer select-none"
+          title={
+            autoMath
+              ? 'Auto-Calculate on "=" is ON (click to turn off)'
+              : 'Auto-Calculate on "=" is OFF (click to turn on)'
+          }
+        >
+          <Calculator className="w-3.5 h-3.5 text-[#52525B]" />
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoMath}
+            onClick={() => {
+              const next = !autoMath;
+              setAutoMath(next);
+              setAutoMathEnabled(next);
+            }}
+            className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full border border-[#9B5B76]/35 transition-colors duration-200"
+            style={{
+              backgroundColor: autoMath ? '#9B5B76' : 'rgba(155, 91, 118, 0.28)',
+            }}
+          >
+            <span
+              className={`inline-block h-3 w-3 transform rounded-full shadow-xs transition-transform duration-200 ${
+                autoMath ? 'translate-x-3.5' : 'translate-x-0.5'
+              }`}
+              style={{ backgroundColor: '#ffffff' }}
+            />
+          </button>
+        </label>
 
         <div className="w-px h-5 bg-[#E4E2DC] mx-0.5 shrink-0" />
 
@@ -2120,8 +2187,8 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
         </button>
       </div>
 
-      {/* Fixed Floating Zoom + Fit All Pill (Bottom-Right) */}
-      <div className="fixed bottom-16 right-4 sm:bottom-5 sm:right-5 z-40 paper-card rounded-full px-2.5 py-1.5 shadow-2xl border border-[#E4E2DC] flex items-center gap-1.5 backdrop-blur-md">
+      {/* Fixed Floating Zoom + Fit All Pill (Bottom-Right on desktop, raised on mobile/tablet to avoid toolbar overlap) */}
+      <div className="fixed bottom-16 right-3 lg:bottom-5 lg:right-5 z-40 paper-card rounded-full px-2 sm:px-2.5 py-1 sm:py-1.5 shadow-2xl border border-[#E4E2DC] flex items-center gap-1 sm:gap-1.5 backdrop-blur-md">
         <button
           type="button"
           onClick={() => zoomCentered(zoom * 0.72)}
@@ -2137,7 +2204,7 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
           value={Math.round(zoom * 100)}
           onChange={(e) => zoomCentered(Number(e.target.value) / 100)}
           title="Zoom Level (5% - 250%)"
-          className="w-16 sm:w-20 accent-[#0A5386] cursor-pointer h-1"
+          className="hidden sm:block w-16 md:w-20 accent-[#0A5386] cursor-pointer h-1"
         />
         <span className="px-1 text-[11px] font-mono-num font-semibold text-[#18181B] min-w-[38px] text-center">
           {Math.round(zoom * 100)}%

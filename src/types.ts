@@ -218,6 +218,9 @@ export interface CollegePeriodDef {
 
 export interface CollegeTimetableCell {
   title: string;
+  courseCode?: string;
+  faculty?: string;
+  classType?: 'Lecture' | 'Lab' | 'Tutorial' | 'Seminar';
   projectId?: string;
   room: string;
   colorHex: string;
@@ -244,10 +247,20 @@ export interface LiveCursorState {
   updatedAt: number;
 }
 
+export interface PlannerTask {
+  id: string;
+  date: string; // 'YYYY-MM-DD'
+  title: string;
+  color: string;
+  completed: boolean;
+  createdAt: number;
+}
+
 export type ActiveTab =
   | 'dashboard'
-  | 'subjects'
-  | 'timetable'
-  | 'exams'
+  | 'tracker'
+  | 'timer'
+  | 'youtube'
+  | 'matrix'
   | 'notebooks'
   | 'resources';
