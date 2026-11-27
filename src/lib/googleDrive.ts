@@ -7,6 +7,7 @@ export interface DriveFileItem {
   size?: string;
   modifiedTime?: string;
   webViewLink?: string;
+  thumbnailLink?: string;
 }
 
 const TOKEN_STORAGE_KEY = 'iqra_gdrive_token_v1';
@@ -163,7 +164,7 @@ export async function findOrCreateIqraFolder(token: string): Promise<string> {
 export async function listDriveFiles(token: string, folderId: string): Promise<DriveFileItem[]> {
   const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
   const fields = encodeURIComponent(
-    'files(id,name,mimeType,size,modifiedTime,webViewLink)'
+    'files(id,name,mimeType,size,modifiedTime,webViewLink,thumbnailLink)'
   );
   const data = await driveFetch<{ files: DriveFileItem[] }>(
     `https://www.googleapis.com/drive/v3/files?q=${q}&fields=${fields}&orderBy=modifiedTime desc&pageSize=100`,
@@ -269,6 +270,22 @@ export async function trashDriveFile(token: string, fileId: string): Promise<voi
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ trashed: true }),
   });
+}
+
+export async function renameDriveFile(
+  token: string,
+  fileId: string,
+  newName: string
+): Promise<DriveFileItem> {
+  return driveFetch<DriveFileItem>(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?fields=id,name,mimeType,size,modifiedTime,webViewLink`,
+    token,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName.trim() }),
+    }
+  );
 }
 
 export function getDriveEmbedUrl(file: DriveFileItem): string {

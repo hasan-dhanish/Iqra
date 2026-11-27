@@ -1,15 +1,19 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Moon, Sun } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ArrowLeft, Maximize2, Moon, Sun, Tv, X } from 'lucide-react';
 import { AuthScreen } from './components/AuthScreen';
 import { DashboardView } from './components/DashboardView';
-import { FloatingTimerWidget } from './components/FloatingTimerWidget';
+import { FloatingTimerWidget, preloadTimerAssets } from './components/FloatingTimerWidget';
 import { JournalView } from './components/JournalView';
+import { LowBatteryPopup } from './components/LowBatteryPopup';
 import { ProjectPinboard } from './components/ProjectPinboard';
 import { ResourcesView } from './components/ResourcesView';
 import { Sidebar } from './components/Sidebar';
+import { StudyFoldersView, type StudyFolder } from './components/StudyFoldersView';
+import { StudyPlannerView } from './components/StudyPlannerView';
 import { TimerView, type StudySessionLog } from './components/TimerView';
 import { HabitTrackerView } from './components/HabitTrackerView';
-import { YoutubeView } from './components/YoutubeView';
+import { YoutubeView, type YoutubeActiveVideo } from './components/YoutubeView';
+import { FOCUS_COUNT_KEY } from './lib/habits';
 import { LdoiProvider, useLdoi } from './context/LdoiContext';
 import type { ActiveTab, Project } from './types';
 
@@ -45,17 +49,25 @@ const WorkspaceShell: React.FC = () => {
   });
 
   // Persistent Global Focus Timer State
-  const [timerMode, setTimerMode] = useState<'countdown' | 'stopwatch'>('countdown');
+  const [timerMode, setTimerMode] = useState<'countdown' | 'pomodoro' | 'stopwatch'>('countdown');
+  const [pomoPhase, setPomoPhase] = useState<'focus' | 'shortBreak' | 'longBreak'>('focus');
   const [customMins, setCustomMins] = useState(45);
   const [countdownLeft, setCountdownLeft] = useState(45 * 60);
   const [stopwatchElapsed, setStopwatchElapsed] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
   const [floatingPinned, setFloatingPinned] = useState(false);
+  const [activeMatrixFolder, setActiveMatrixFolder] = useState<StudyFolder | null>(null);
+  const [activeYtVideo, setActiveYtVideo] = useState<YoutubeActiveVideo | null>(null);
   const [midpointAcked, setMidpointAcked] = useState(false);
   const [victoryDismissed, setVictoryDismissed] = useState(false);
   const [sessionLabel, setSessionLabel] = useState('');
-  const [ambientOn, setAmbientOn] = useState(false);
-  const audioCtxRef = useRef<AudioContext | null>(null);
+  const [focusCount, setFocusCount] = useState<number>(() => {
+    try {
+      return Number(localStorage.getItem(FOCUS_COUNT_KEY)) || 0;
+    } catch {
+      return 0;
+    }
+  });
   const [sessions, setSessions] = useState<StudySessionLog[]>(() => {
     try {
       const raw = localStorage.getItem(SESSIONS_KEY);
@@ -66,9 +78,24 @@ const WorkspaceShell: React.FC = () => {
   });
 
   useEffect(() => {
+    preloadTimerAssets();
+  }, []);
+
+  const pomoPhaseMins = (phase: 'focus' | 'shortBreak' | 'longBreak') =>
+    phase === 'focus' ? 25 : phase === 'shortBreak' ? 5 : 15;
+
+  const selectPomoPhase = (phase: 'focus' | 'shortBreak' | 'longBreak') => {
+    setTimerRunning(false);
+    setMidpointAcked(false);
+    setVictoryDismissed(false);
+    setPomoPhase(phase);
+    setCountdownLeft(pomoPhaseMins(phase) * 60);
+  };
+
+  useEffect(() => {
     if (!timerRunning) return;
     const id = window.setInterval(() => {
-      if (timerMode === 'countdown') {
+      if (timerMode === 'countdown' || timerMode === 'pomodoro') {
         setCountdownLeft((prev) => {
           if (prev <= 1) {
             setTimerRunning(false);
@@ -82,46 +109,6 @@ const WorkspaceShell: React.FC = () => {
     }, 1000);
     return () => window.clearInterval(id);
   }, [timerRunning, timerMode]);
-
-  // Gentle Web Audio Brown-Noise Focus Hum
-  useEffect(() => {
-    if (!ambientOn) {
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close().catch(() => {});
-        audioCtxRef.current = null;
-      }
-      return;
-    }
-    try {
-      const ctx = new AudioContext();
-      const bufferSize = 2 * ctx.sampleRate;
-      const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-      const output = noiseBuffer.getChannelData(0);
-      let lastOut = 0;
-      for (let i = 0; i < bufferSize; i++) {
-        const white = Math.random() * 2 - 1;
-        output[i] = (lastOut + 0.02 * white) / 1.02;
-        lastOut = output[i];
-        output[i] *= 0.18;
-      }
-      const whiteNoise = ctx.createBufferSource();
-      whiteNoise.buffer = noiseBuffer;
-      whiteNoise.loop = true;
-      const filter = ctx.createBiquadFilter();
-      filter.type = 'lowpass';
-      filter.frequency.value = 340;
-      whiteNoise.connect(filter);
-      filter.connect(ctx.destination);
-      whiteNoise.start(0);
-      audioCtxRef.current = ctx;
-      return () => {
-        ctx.close().catch(() => {});
-        audioCtxRef.current = null;
-      };
-    } catch {
-      // ignore audio context restrictions
-    }
-  }, [ambientOn]);
 
   const applyPresetMinutes = (mins: number) => {
     setTimerRunning(false);
@@ -138,14 +125,17 @@ const WorkspaceShell: React.FC = () => {
     setVictoryDismissed(false);
     if (keepFloating) setFloatingPinned(true);
     if (timerMode === 'countdown') setCountdownLeft(customMins * 60);
+    else if (timerMode === 'pomodoro') setCountdownLeft(pomoPhaseMins(pomoPhase) * 60);
     else setStopwatchElapsed(0);
   };
 
   const handleSaveSession = () => {
+    const targetSecs =
+      timerMode === 'pomodoro' ? pomoPhaseMins(pomoPhase) * 60 : customMins * 60;
     const studiedSecs =
       timerMode === 'stopwatch'
         ? stopwatchElapsed
-        : Math.max(0, customMins * 60 - countdownLeft);
+        : Math.max(0, targetSecs - countdownLeft);
     if (studiedSecs < 10) return;
 
     const next: StudySessionLog[] = [
@@ -161,9 +151,12 @@ const WorkspaceShell: React.FC = () => {
       ...sessions,
     ].slice(0, 15);
 
+    const nextCount = focusCount + 1;
     setSessions(next);
+    setFocusCount(nextCount);
     try {
       localStorage.setItem(SESSIONS_KEY, JSON.stringify(next));
+      localStorage.setItem(FOCUS_COUNT_KEY, String(nextCount));
     } catch {
       // ignore
     }
@@ -209,18 +202,24 @@ const WorkspaceShell: React.FC = () => {
     if (tab === 'timer') {
       setFloatingPinned(false);
     }
+    if (tab !== 'matrix') {
+      setActiveMatrixFolder(null);
+    }
   };
 
+  const targetMinsForProgress =
+    timerMode === 'pomodoro' ? pomoPhaseMins(pomoPhase) : customMins;
   const hasTimerProgress =
-    timerMode === 'countdown'
-      ? countdownLeft < customMins * 60
+    timerMode === 'countdown' || timerMode === 'pomodoro'
+      ? countdownLeft < targetMinsForProgress * 60
       : stopwatchElapsed > 0;
   const showFloatingTimer =
     activeTab !== 'timer' && (timerRunning || hasTimerProgress || floatingPinned);
-  const miniSeconds = timerMode === 'countdown' ? countdownLeft : stopwatchElapsed;
-  const totalTarget = customMins * 60;
+  const miniSeconds =
+    timerMode === 'countdown' || timerMode === 'pomodoro' ? countdownLeft : stopwatchElapsed;
+  const totalTarget = targetMinsForProgress * 60;
   const miniProgressPct =
-    timerMode === 'countdown' && totalTarget > 0
+    (timerMode === 'countdown' || timerMode === 'pomodoro') && totalTarget > 0
       ? ((totalTarget - countdownLeft) / totalTarget) * 100
       : ((stopwatchElapsed % 3600) / 3600) * 100;
 
@@ -267,7 +266,7 @@ const WorkspaceShell: React.FC = () => {
         </svg>
       </div>
 
-      {activeTab !== 'matrix' && (
+      {!(activeTab === 'matrix' && activeMatrixFolder) && (
         <Sidebar
           activeTab={activeTab}
           onSelectTab={handleSelectTab}
@@ -276,24 +275,49 @@ const WorkspaceShell: React.FC = () => {
         />
       )}
 
-      <main className="relative z-10 flex-1 min-w-0 md:h-screen md:overflow-y-auto p-3 sm:p-5 lg:p-8 pb-24 md:pb-8">
-        <div className={activeTab === 'youtube' ? 'w-full' : 'max-w-7xl mx-auto'}>
+      <main className="relative flex-1 min-w-0 md:h-screen md:overflow-y-auto p-3 sm:p-5 lg:p-8 pb-24 md:pb-8">
+        <div
+          className={
+            activeTab === 'youtube' || activeTab === 'dashboard'
+              ? 'w-full md:h-full'
+              : 'max-w-7xl mx-auto'
+          }
+        >
           {activeTab === 'dashboard' && (
             <DashboardView
+              darkMode={darkMode}
               onNavigate={handleSelectTab}
-              onOpenProject={() => handleSelectTab('matrix')}
+              onOpenFolder={(folder) => {
+                setActiveMatrixFolder(folder);
+                setActiveTab('matrix');
+              }}
+              timerSeconds={miniSeconds}
+              timerRunning={timerRunning}
+              onToggleTimer={() => setTimerRunning((r) => !r)}
             />
           )}
 
           {activeTab === 'tracker' && <HabitTrackerView />}
+
+          {activeTab === 'planner' && <StudyPlannerView />}
 
           {activeTab === 'timer' && (
             <TimerView
               mode={timerMode}
               setMode={(m) => {
                 setTimerRunning(false);
+                setMidpointAcked(false);
+                setVictoryDismissed(false);
                 setTimerMode(m);
+                if (m === 'pomodoro') {
+                  setPomoPhase('focus');
+                  setCountdownLeft(25 * 60);
+                } else if (m === 'countdown') {
+                  setCountdownLeft(customMins * 60);
+                }
               }}
+              pomoPhase={pomoPhase}
+              onSelectPomoPhase={selectPomoPhase}
               customMins={customMins}
               countdownLeft={countdownLeft}
               stopwatchElapsed={stopwatchElapsed}
@@ -304,10 +328,9 @@ const WorkspaceShell: React.FC = () => {
               sessionLabel={sessionLabel}
               setSessionLabel={setSessionLabel}
               sessions={sessions}
+              focusCount={focusCount}
               handleSaveSession={handleSaveSession}
               deleteSession={deleteSession}
-              ambientOn={ambientOn}
-              setAmbientOn={setAmbientOn}
               midpointAcked={midpointAcked}
               onMidpointAck={() => setMidpointAcked(true)}
               victoryDismissed={victoryDismissed}
@@ -315,21 +338,34 @@ const WorkspaceShell: React.FC = () => {
             />
           )}
 
-          {activeTab === 'youtube' && <YoutubeView />}
+          {activeTab === 'youtube' && (
+            <YoutubeView
+              initialVideo={activeYtVideo}
+              onVideoChange={setActiveYtVideo}
+            />
+          )}
 
-          {activeTab === 'matrix' && (
+          {activeTab === 'matrix' && !activeMatrixFolder && (
+            <StudyFoldersView onOpenFolder={(folder) => setActiveMatrixFolder(folder)} />
+          )}
+
+          {activeTab === 'matrix' && activeMatrixFolder && (
             <div className="fixed inset-0 z-30 matrix-clean-bg flex flex-col overflow-hidden">
               <div className="fixed top-4 left-4 z-40 flex items-center gap-2 paper-card rounded-full pl-1.5 pr-3.5 py-1.5 shadow-lg border border-[#E4E2DC] backdrop-blur-md">
                 <button
                   type="button"
-                  onClick={() => handleSelectTab('dashboard')}
-                  title="Back to Dashboard"
+                  onClick={() => setActiveMatrixFolder(null)}
+                  title="Back to Study Folders"
                   className="ios-press p-1.5 rounded-full bg-white/80 border border-[#E4E2DC] hover:border-[#18181B] text-[#18181B]"
                 >
                   <ArrowLeft className="w-3.5 h-3.5" />
                 </button>
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: activeMatrixFolder.color }}
+                />
                 <span className="text-xs font-semibold text-[#18181B]">
-                  Study Matrix
+                  {activeMatrixFolder.name}
                 </span>
               </div>
 
@@ -344,7 +380,14 @@ const WorkspaceShell: React.FC = () => {
                 </button>
               </div>
 
-              <ProjectPinboard project={DEFAULT_MATRIX_PROJECT} />
+              <ProjectPinboard
+                key={activeMatrixFolder.id}
+                project={{
+                  ...DEFAULT_MATRIX_PROJECT,
+                  id: activeMatrixFolder.id,
+                  title: activeMatrixFolder.name,
+                }}
+              />
             </div>
           )}
 
@@ -363,6 +406,7 @@ const WorkspaceShell: React.FC = () => {
           sessionLabel={sessionLabel}
           onToggleRunning={() => setTimerRunning((r) => !r)}
           onRestart={() => handleResetTimer(true)}
+          onLogSession={handleSaveSession}
           onDismiss={() => setFloatingPinned(false)}
           onOpenTimerTab={() => handleSelectTab('timer')}
           midpointAcked={midpointAcked}
@@ -371,6 +415,52 @@ const WorkspaceShell: React.FC = () => {
           onVictoryDismiss={() => setVictoryDismissed(true)}
         />
       )}
+
+      {/* Persistent YouTube Mini-Player when switching away from YouTube tab */}
+      {activeTab !== 'youtube' && activeYtVideo && (
+        <div className="fixed bottom-4 left-4 md:left-72 z-40 w-64 sm:w-72 paper-card rounded-2xl shadow-2xl border border-[#E2E0D8] overflow-hidden animate-workspace-enter">
+          <div className="px-3 py-1.5 bg-[#A43850]/12 border-b border-[#E2E0D8] flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Tv className="w-3.5 h-3.5 text-[#A43850] shrink-0" />
+              <span className="text-[11px] font-bold text-[#1C1C1E] truncate">
+                {activeYtVideo.title}
+              </span>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleSelectTab('youtube')}
+                title="Back to YouTube Player"
+                className="p-1 rounded-md text-[#52525B] hover:text-[#1C1C1E] hover:bg-black/5"
+              >
+                <Maximize2 className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveYtVideo(null)}
+                title="Close Mini-Player"
+                className="p-1 rounded-md text-[#52525B] hover:text-red-600 hover:bg-black/5"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+          <div className="w-full aspect-video bg-black">
+            <iframe
+              src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(
+                activeYtVideo.videoId
+              )}?autoplay=1`}
+              title={activeYtVideo.title}
+              className="w-full h-full border-0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Low Battery Popup (<= 20% and unplugged) */}
+      <LowBatteryPopup />
     </div>
   );
 };

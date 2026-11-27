@@ -8,6 +8,7 @@ interface FloatingTimerWidgetProps {
   sessionLabel?: string;
   onToggleRunning: () => void;
   onRestart: () => void;
+  onLogSession?: () => void;
   onDismiss?: () => void;
   onOpenTimerTab?: () => void;
   variant?: 'floating' | 'embedded';
@@ -32,6 +33,40 @@ const RESET_IMAGES = [
 ];
 
 const STILL_FOCUSSING_IMAGE = '/still-focussing.jpg';
+
+const SHINCHAN_FRAMES = [
+  '/shinchan-1.png',
+  '/shinchan-2.png',
+  '/shinchan-3.png',
+  '/shinchan-4.png',
+];
+const PAUSED_SHINCHAN_IMAGE = '/spiderman-paused.png';
+
+let assetsPreloaded = false;
+
+/**
+ * Preload and decode all Focus Timer sprites & overlay images in the background
+ * so switching to the Focus tab or animating frames has zero network lag.
+ */
+export function preloadTimerAssets(): void {
+  if (assetsPreloaded || typeof window === 'undefined') return;
+  assetsPreloaded = true;
+  const allUrls = [
+    ...SHINCHAN_FRAMES,
+    PAUSED_SHINCHAN_IMAGE,
+    STILL_FOCUSSING_IMAGE,
+    ...VICTORY_IMAGES,
+    ...RESET_IMAGES,
+  ];
+  for (const url of allUrls) {
+    const img = new window.Image();
+    img.decoding = 'async';
+    img.src = url;
+    if (typeof img.decode === 'function') {
+      img.decode().catch(() => {});
+    }
+  }
+}
 
 function pickRandom(items: string[]): string {
   return items[Math.floor(Math.random() * items.length)];
@@ -127,6 +162,7 @@ export const FloatingTimerWidget: React.FC<FloatingTimerWidgetProps> = ({
   sessionLabel,
   onToggleRunning,
   onRestart,
+  onLogSession,
   onDismiss,
   onOpenTimerTab,
   variant = 'floating',
@@ -382,7 +418,7 @@ export const FloatingTimerWidget: React.FC<FloatingTimerWidgetProps> = ({
           className="text-black/[0.05]"
         />
 
-        {/* Blue Elapsed Band (Left 0% -> Baton Hand) with soft rounded corners */}
+        {/* Blue Elapsed Band (Left 0% -> Shinchan) with soft rounded corners */}
         {clampedPct > 0.5 && (
           <path
             d={describeRoundedSectorArc(
@@ -425,17 +461,32 @@ export const FloatingTimerWidget: React.FC<FloatingTimerWidgetProps> = ({
           );
         })}
 
-        {/* Animated Shinchan Running when active, Tired Shinchan when paused */}
+        {/* Animated Shinchan Running when active, Tired Shinchan when paused (all pre-mounted for zero-flicker swap) */}
         <g
-          transform={`translate(${runnerPos.x.toFixed(2)}, ${runnerPos.y.toFixed(2)}) rotate(${currentAngle.toFixed(2)})${running ? ' scale(-1, 1)' : ''}`}
+          transform={`translate(${runnerPos.x.toFixed(2)}, ${runnerPos.y.toFixed(2)}) rotate(${currentAngle.toFixed(2)})`}
         >
+          <g transform="scale(-1, 1)">
+            {SHINCHAN_FRAMES.map((src, idx) => (
+              <image
+                key={src}
+                href={src}
+                x={-14}
+                y={-26}
+                width={28}
+                height={28}
+                preserveAspectRatio="xMidYMid meet"
+                opacity={running && frame === idx + 1 ? 1 : 0}
+              />
+            ))}
+          </g>
           <image
-            href={running ? `/shinchan-${frame}.png` : '/spiderman-paused.png'}
+            href={PAUSED_SHINCHAN_IMAGE}
             x={-14}
             y={-26}
             width={28}
             height={28}
             preserveAspectRatio="xMidYMid meet"
+            opacity={!running ? 1 : 0}
           />
         </g>
       </svg>
@@ -513,29 +564,46 @@ export const FloatingTimerWidget: React.FC<FloatingTimerWidgetProps> = ({
           )}
 
           {overlayMode.type === 'victory' && (
-            <div className="absolute inset-x-0 bottom-0 p-3 pt-8 bg-gradient-to-t from-black/85 via-black/40 to-transparent flex items-center justify-center gap-2">
-              <button
-                type="button"
-                onClick={handleRestartClick}
-                className="ios-press px-3.5 py-1 rounded-full bg-[#0A84FF] hover:bg-[#0070E0] text-white text-[11px] font-extrabold shadow-lg flex items-center gap-1"
-              >
-                <RotateCcw className="w-3 h-3" />
-                Restart
-              </button>
-              {onDismiss && (
+            <div className="absolute inset-x-0 bottom-0 p-3 pt-8 bg-gradient-to-t from-black/90 via-black/55 to-transparent flex flex-col items-center gap-1.5 text-center">
+              <span className="text-[11px] font-extrabold text-white drop-shadow">
+                Log this focus session?
+              </span>
+              <div className="flex items-center justify-center gap-1.5">
+                {onLogSession && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onLogSession();
+                      onVictoryDismiss?.();
+                      setOverlayMode(null);
+                    }}
+                    className="ios-press px-3 py-1 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-extrabold shadow-lg"
+                  >
+                    Yes, Log
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleRestartClick}
+                  title="Restart"
+                  className="ios-press px-2.5 py-1 rounded-full bg-[#0A84FF] hover:bg-[#0070E0] text-white text-[11px] font-extrabold shadow-lg flex items-center gap-1"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Restart
+                </button>
                 <button
                   type="button"
                   onClick={() => {
                     onVictoryDismiss?.();
                     setOverlayMode(null);
-                    onDismiss();
+                    onDismiss?.();
                   }}
-                  title="Close"
-                  className="ios-press p-1.5 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-sm"
+                  title="Skip"
+                  className="ios-press p-1 rounded-full bg-white/20 hover:bg-white/30 text-white backdrop-blur-sm"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
-              )}
+              </div>
             </div>
           )}
         </div>

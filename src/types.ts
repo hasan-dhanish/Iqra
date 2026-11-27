@@ -259,6 +259,7 @@ export interface PlannerTask {
 export type ActiveTab =
   | 'dashboard'
   | 'tracker'
+  | 'planner'
   | 'timer'
   | 'youtube'
   | 'matrix'

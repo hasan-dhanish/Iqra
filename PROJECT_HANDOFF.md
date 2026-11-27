@@ -108,3 +108,43 @@ When the user imports this file, ask them these questions (grouped cleanly so th
    - Keep the current **Light/Night glassmorphic + 7-segment clock + Apple Books shelf** aesthetic, or change colors/wallpapers/logo?
 5. **Backend / Deployment:**
    - Will this use a **new Supabase project** (for the client's database & file storage), or start **local-first (`localStorage`)**?
+
+---
+
+## 6. Current State & Lessons Learned (Updated 2026-11-27)
+
+### Brand & Active Workspace
+- **App Name:** **Iqra Desk** (`Sajitha's Study Space`), personalized for **Sajitha**.
+- **Sidebar & Companions:** Includes a **Battery Bar** on the sidebar (note: Brave browser intentionally spoofs/clamps `navigator.getBattery()` to 100% charging for fingerprinting protection, whereas Chrome reads real hardware battery). Mascot bunny positioned slightly left on the sidebar.
+
+### Implemented Modules & Current Behavior
+1. **My Dashboard (`src/components/DashboardView.tsx`, `src/App.tsx`):**
+   - **Full-Viewport Layout (`md:h-full` + `flex flex-col justify-between`):** Spaced out across the entire screen height without cramped padding or unnecessary vertical scrolling.
+   - **Top Row:** 7-segment Clock + Greeting Bar. (Quick Start Timer removed by user request).
+   - **Middle Row (`flex-1 flex-col lg:flex-row`):**
+     - **Left:** **1:1 Round-Cornered Square** (`aspect-square lg:h-full lg:w-auto shrink-0`) showing the **Day Streak** with an elevated circular progress ring (featuring light depth SVG drop-shadow filter, vibrant royal indigo/purple stroke with rounded caps, and the clean bold Number of Days centered inside the circle).
+     - **Right:** **Desk Scratchpad** (`flex-1 min-w-0`) — an auto-saving live notepad for instant lecture takeaways, formulas, and daily focus notes with character count and confirmed clear action.
+   - **Bottom Row:** **Book Shelf & Folder Shelf** — real 3D bookshelf ledge (`.book-shelf-ledge`) displaying recent Frosted Glass Folders and 3D hardcover Notebooks.
+2. **Habit Tracker (`src/components/HabitTrackerView.tsx`, `src/components/ColorRingPicker.tsx`, `src/lib/habits.ts`):**
+   - **Create New Habit Modal:** Centered popup (`fixed inset-0`) asking for **Habit Name**, **Type** (`Regular`, `Measurable`, or `Quitting`), and draggable **Colour Ring**.
+   - **Progress Bar & Heatmap in Dark Mode:** Today's completion bar and the 52-week yearly consistency heatmap use vibrant glowing teal/cyan (`#2DD4BF`) in dark mode instead of blending into the dark background.
+   - **Sleep Tracker Removed:** Cleaned up per user request, leaving full-width focus on habit cards and consistency.
+3. **Focus Timer (`src/components/TimerView.tsx`, `src/components/FloatingTimerWidget.tsx`):**
+   - **Focus Intent:** Rendered as a **dotted dashed pill space** with `"What are you focusing on?"` and a pen icon (`PenLine`), clicking which allows inline editing.
+   - **Countdown Input:** Clean input without spin buttons, freely clearable/backspaceable, with `-` and `+` circular buttons.
+4. **Renamed Sections Across App:**
+   - "Resource Library" → **"My Files"**
+   - "YouTube Player" → **"Youtube"**
+   - "Study Folders" → **"Folder Shelf"**
+   - "Study Notebooks" → **"Book Shelf"**
+5. **Universal Deletion Confirmations:**
+   - Any deletion action across Timer sessions, Habits, YouTube moments/playlists, or Desk Scratchpad triggers a standardized confirmation dialog: `"Are you sure you want to Delete ?"`.
+6. **Dark Mode Tab Hover Fix:**
+   - Global CSS rule in `src/index.css` prevents hover text from turning near-black (`#1C1C1E`) on dark backgrounds, lighting up cleanly to white on hover.
+
+### User Design Preferences (Follow Strictly)
+- **No Long Rectangular Buttons Everywhere:** Prefer **circular icon buttons** (`rounded-full`) for card actions (checkmarks, `+`/`-`, play/pause, clean/reset).
+- **True Squares & Full-Screen Spacing:** Keep the Dashboard Streak Counter a true **1:1 round-cornered square** (`aspect-square`), and space Dashboard sections to fill the viewport cleanly rather than squishing everything to the top.
+- **Colour Ring Over Swatch Dots:** When picking colours, prefer a circular **Colour Ring** (`ColorRingPicker`) over plain preset dots.
+- **Clean, Minimal Chrome:** Avoid noisy counters like `elements (0)` or unnecessary cycle badges.
+- **Windows PowerShell Note:** `rg` is not installed; use `Select-String` or `Get-ChildItem`, and chain commands with `; if ($?) { ... }`. Always run `npm run build; if ($?) { npm run lint }` after edits.

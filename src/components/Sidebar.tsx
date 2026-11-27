@@ -1,7 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Battery,
+  BatteryCharging,
   BookOpen,
   CheckCircle2,
+  ClipboardList,
   Layers,
   LayoutDashboard,
   Library,
@@ -13,9 +16,11 @@ import {
   Timer,
   Tv,
   X,
+  Zap,
 } from 'lucide-react';
 import { getMemberColor, getMemberInitials } from '../constants';
 import { useLdoi } from '../context/LdoiContext';
+import { useBatteryStatus } from '../lib/useBatteryStatus';
 import type { ActiveTab } from '../types';
 import { LdoiLogo } from './LdoiLogo';
 
@@ -33,12 +38,13 @@ const NAV_ITEMS: {
   icon: React.ComponentType<{ className?: string }>;
 }[] = [
     { id: 'dashboard', label: 'My Dashboard', color: '#0A5386', icon: LayoutDashboard },
-    { id: 'tracker', label: 'Daily Planner', color: '#133F47', icon: CheckCircle2 },
-    { id: 'matrix', label: 'Study Matrix', color: '#254454', icon: Layers },
+    { id: 'tracker', label: 'Habit Tracker', color: '#133F47', icon: CheckCircle2 },
+    { id: 'planner', label: 'Study Planner', color: '#0A5386', icon: ClipboardList },
+    { id: 'matrix', label: 'Folder Shelf', color: '#254454', icon: Layers },
     { id: 'timer', label: 'Focus Timer', color: '#9B5B76', icon: Timer },
-    { id: 'youtube', label: 'YouTube Player', color: '#A43850', icon: Tv },
-    { id: 'notebooks', label: 'Study Notebooks', color: '#1B5E5A', icon: BookOpen },
-    { id: 'resources', label: 'Resource Library', color: '#5B3A70', icon: Library },
+    { id: 'youtube', label: 'Youtube', color: '#A43850', icon: Tv },
+    { id: 'notebooks', label: 'Book Shelf', color: '#1B5E5A', icon: BookOpen },
+    { id: 'resources', label: 'My Files', color: '#5B3A70', icon: Library },
   ];
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -48,6 +54,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleDarkMode,
 }) => {
   const { currentUser, signOut } = useLdoi();
+  const battery = useBatteryStatus();
   const [spideyStage, setSpideyStage] = useState<'idle' | 'intro' | 'chat'>('idle');
   const spideyTimerRef = useRef<number | null>(null);
 
@@ -96,6 +103,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-1.5">
+            {battery.supported && battery.pct !== null && (
+              <span
+                className={`md:hidden inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-[#E2E0D8] text-[10px] font-bold font-mono-num ${
+                  battery.charging
+                    ? 'text-emerald-600'
+                    : battery.pct <= 20
+                    ? 'text-red-500'
+                    : 'text-[#52525B]'
+                }`}
+                title={battery.charging ? 'Charging' : 'On Battery'}
+              >
+                {battery.charging ? (
+                  <Zap className="w-3 h-3 fill-current" />
+                ) : (
+                  <Battery className="w-3 h-3" />
+                )}
+                {battery.pct}%
+              </span>
+            )}
             <button
               type="button"
               onClick={onToggleDarkMode}
@@ -146,7 +172,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     src="/mascot-tab.png"
                     alt=""
                     aria-hidden="true"
-                    className="bunny-jump-up hidden md:block pointer-events-none select-none absolute -top-[47px] right-4 h-12 w-auto drop-shadow-sm z-20"
+                    className="bunny-jump-up hidden md:block pointer-events-none select-none absolute -top-[47px] right-9 h-12 w-auto drop-shadow-sm z-20"
                   />
                 )}
                 <span
@@ -296,6 +322,52 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <LogOut className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Live System Battery Bar */}
+        {battery.supported && battery.pct !== null && (
+          <div className="mt-2 px-2 py-1.5 rounded-xl bg-black/[0.04] space-y-1">
+            <div className="flex items-center justify-between text-[10px] font-semibold">
+              <span className="inline-flex items-center gap-1 text-[#6E6E73]">
+                {battery.charging ? (
+                  <BatteryCharging className="w-3.5 h-3.5 text-emerald-500" />
+                ) : (
+                  <Battery
+                    className={`w-3.5 h-3.5 ${
+                      battery.pct <= 20 ? 'text-red-500' : 'text-[#52525B]'
+                    }`}
+                  />
+                )}
+                {battery.charging ? 'Charging' : battery.pct <= 20 ? 'Low Battery' : 'Battery'}
+              </span>
+              <span
+                className={`font-mono-num font-bold ${
+                  battery.charging
+                    ? 'text-emerald-600'
+                    : battery.pct <= 20
+                    ? 'text-red-500'
+                    : 'text-[#1C1C1E]'
+                }`}
+              >
+                {battery.pct}%
+              </span>
+            </div>
+            <div className="h-1.5 w-full rounded-full bg-black/10 overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${battery.pct}%`,
+                  backgroundColor: battery.charging
+                    ? '#10B981'
+                    : battery.pct <= 20
+                    ? '#EF4444'
+                    : battery.pct <= 50
+                    ? '#F59E0B'
+                    : '#0A84FF',
+                }}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </aside>
   );

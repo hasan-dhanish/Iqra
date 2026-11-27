@@ -1,4 +1,5 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ConfirmModal } from './ConfirmModal';
 import {
   ArrowLeft,
   Bookmark,
@@ -67,6 +68,16 @@ function saveJson(key: string, value: unknown) {
   }
 }
 
+function formatSecondsLabel(totalSecs: number): string {
+  const safe = Math.max(0, Math.floor(totalSecs));
+  const h = Math.floor(safe / 3600);
+  const m = Math.floor((safe % 3600) / 60);
+  const s = safe % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${m}:${String(s).padStart(2, '0')}`;
+}
+
 function parseTimestamp(input: string): { seconds: number; label: string } | null {
   const clean = input.trim();
   if (!clean) return null;
@@ -125,12 +136,40 @@ async function searchYouTubePublic(query: string): Promise<SearchResultItem[]> {
   throw new Error('Could not load search results right now. You can paste any YouTube URL directly!');
 }
 
-export const YoutubeView: React.FC = () => {
+export interface YoutubeActiveVideo {
+  videoId: string;
+  title: string;
+  channel: string;
+  thumbnail: string;
+  durationText?: string;
+}
+
+interface YoutubeViewProps {
+  initialVideo?: YoutubeActiveVideo | null;
+  onVideoChange?: (video: YoutubeActiveVideo | null) => void;
+}
+
+export const YoutubeView: React.FC<YoutubeViewProps> = ({
+  initialVideo = null,
+  onVideoChange,
+}) => {
   const [query, setQuery] = useState('');
-  const [viewMode, setViewMode] = useState<'browse' | 'watch'>('browse');
+  const [viewMode, setViewMode] = useState<'browse' | 'watch'>(() =>
+    initialVideo ? 'watch' : 'browse'
+  );
   const [browseTab, setBrowseTab] = useState<'results' | 'saved' | 'playlists' | 'history'>('results');
 
-  const [currentVideo, setCurrentVideo] = useState<SearchResultItem | null>(null);
+  const [currentVideo, setCurrentVideo] = useState<SearchResultItem | null>(() =>
+    initialVideo
+      ? {
+          videoId: initialVideo.videoId,
+          title: initialVideo.title,
+          channel: initialVideo.channel,
+          thumbnail: initialVideo.thumbnail,
+          durationText: initialVideo.durationText ?? '',
+        }
+      : null
+  );
   const [seekSeconds, setSeekSeconds] = useState(0);
   const [embedNonce, setEmbedNonce] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -142,8 +181,54 @@ export const YoutubeView: React.FC = () => {
 
   // Study Companion Tabs in Watch Mode
   const [sideTab, setSideTab] = useState<'notes' | 'moments' | 'upnext'>('notes');
-  const [momentTime, setMomentTime] = useState('');
+  const [momentTime, setMomentTime] = useState('0:00');
   const [momentNote, setMomentNote] = useState('');
+  const [momentTimeLocked, setMomentTimeLocked] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ type: 'moment' | 'playlist'; id: string; title: string } | null>(null);
+  const momentTimeLockedRef = useRef(false);
+
+  useEffect(() => {
+    momentTimeLockedRef.current = momentTimeLocked;
+  }, [momentTimeLocked]);
+
+  // Listen to YouTube iframe postMessage events to keep momentTime synced with elapsed video time
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (
+        typeof event.origin !== 'string' ||
+        (!event.origin.includes('youtube.com') && !event.origin.includes('youtube-nocookie.com'))
+      ) {
+        return;
+      }
+      if (typeof event.data !== 'string') return;
+      try {
+        const data = JSON.parse(event.data) as {
+          event?: string;
+          info?: { currentTime?: number };
+        };
+        if (
+          (data.event === 'infoDelivery' || data.event === 'initialDelivery') &&
+          typeof data.info?.currentTime === 'number' &&
+          !momentTimeLockedRef.current
+        ) {
+          setMomentTime(formatSecondsLabel(data.info.currentTime));
+        }
+      } catch {
+        // ignore non-JSON messages
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const subscribeToPlayerEvents = () => {
+    if (!iframeRef.current?.contentWindow) return;
+    iframeRef.current.contentWindow.postMessage(
+      JSON.stringify({ event: 'listening', id: 1, channel: 'widget' }),
+      '*'
+    );
+  };
 
   // Persisted State
   const [savedVideos, setSavedVideos] = useState<SearchResultItem[]>(() =>
@@ -183,6 +268,7 @@ export const YoutubeView: React.FC = () => {
 
   const playVideo = (item: SearchResultItem, startAt = 0) => {
     setCurrentVideo(item);
+    onVideoChange?.(item);
     setSeekSeconds(startAt);
     setEmbedNonce((n) => n + 1);
     setViewMode('watch');
@@ -339,8 +425,8 @@ export const YoutubeView: React.FC = () => {
     const next = { ...momentsMap, [currentVideo.videoId]: nextList };
     setMomentsMap(next);
     saveJson(MOMENTS_KEY, next);
-    setMomentTime('');
     setMomentNote('');
+    setMomentTimeLocked(false);
   };
 
   const deleteMoment = (momentId: string) => {
@@ -381,7 +467,9 @@ export const YoutubeView: React.FC = () => {
   const embedSrc = currentVideo
     ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(
         currentVideo.videoId
-      )}?autoplay=1&enablejsapi=1${seekSeconds > 0 ? `&start=${seekSeconds}` : ''}&t=${embedNonce}`
+      )}?autoplay=1&enablejsapi=1${
+        typeof window !== 'undefined' ? `&origin=${encodeURIComponent(window.location.origin)}` : ''
+      }${seekSeconds > 0 ? `&start=${seekSeconds}` : ''}&t=${embedNonce}`
     : '';
 
   return (
@@ -492,6 +580,7 @@ export const YoutubeView: React.FC = () => {
                   ref={iframeRef}
                   src={embedSrc}
                   title={currentVideo.title}
+                  onLoad={subscribeToPlayerEvents}
                   className="w-full h-full border-0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
@@ -600,14 +689,14 @@ export const YoutubeView: React.FC = () => {
 
           {/* Right: Study Companion (Notes / Key Moments / Up Next) */}
           <div className="xl:col-span-4 paper-card rounded-2xl p-4 space-y-3">
-            <div className="grid grid-cols-3 gap-1 bg-black/5 rounded-xl p-1">
+            <div className="grid grid-cols-3 gap-1 bg-black/5 dark:bg-white/10 rounded-xl p-1">
               <button
                 type="button"
                 onClick={() => setSideTab('notes')}
                 className={`py-1.5 text-[11px] font-semibold rounded-lg inline-flex items-center justify-center gap-1 transition-colors ${
                   sideTab === 'notes'
-                    ? 'bg-[#9B5B76] text-white'
-                    : 'text-[#6E6E73] hover:text-[#1C1C1E]'
+                    ? 'bg-[#9B5B76] text-white shadow-xs'
+                    : 'text-[#6E6E73] hover:text-[#1C1C1E] dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10'
                 }`}
               >
                 <FileText className="w-3 h-3" /> Notes
@@ -617,8 +706,8 @@ export const YoutubeView: React.FC = () => {
                 onClick={() => setSideTab('moments')}
                 className={`py-1.5 text-[11px] font-semibold rounded-lg inline-flex items-center justify-center gap-1 transition-colors ${
                   sideTab === 'moments'
-                    ? 'bg-[#9B5B76] text-white'
-                    : 'text-[#6E6E73] hover:text-[#1C1C1E]'
+                    ? 'bg-[#9B5B76] text-white shadow-xs'
+                    : 'text-[#6E6E73] hover:text-[#1C1C1E] dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10'
                 }`}
               >
                 <Sparkles className="w-3 h-3" /> Moments
@@ -628,8 +717,8 @@ export const YoutubeView: React.FC = () => {
                 onClick={() => setSideTab('upnext')}
                 className={`py-1.5 text-[11px] font-semibold rounded-lg inline-flex items-center justify-center gap-1 transition-colors ${
                   sideTab === 'upnext'
-                    ? 'bg-[#9B5B76] text-white'
-                    : 'text-[#6E6E73] hover:text-[#1C1C1E]'
+                    ? 'bg-[#9B5B76] text-white shadow-xs'
+                    : 'text-[#6E6E73] hover:text-[#1C1C1E] dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10'
                 }`}
               >
                 <ListVideo className="w-3 h-3" /> Up Next
@@ -661,14 +750,26 @@ export const YoutubeView: React.FC = () => {
                       type="text"
                       required
                       value={momentTime}
-                      onChange={(e) => setMomentTime(e.target.value)}
+                      onChange={(e) => {
+                        setMomentTimeLocked(true);
+                        setMomentTime(e.target.value);
+                      }}
                       placeholder="12:45"
+                      title={
+                        momentTimeLocked
+                          ? 'Timestamp locked at your key moment'
+                          : 'Auto-synced with video elapsed time'
+                      }
                       className="w-20 px-2.5 py-1.5 text-xs font-mono-num rounded-xl border border-[#E2E0D8] bg-white/60"
                     />
                     <input
                       type="text"
                       value={momentNote}
-                      onChange={(e) => setMomentNote(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setMomentNote(val);
+                        setMomentTimeLocked(val.length > 0);
+                      }}
                       placeholder="What happens at this moment?"
                       className="flex-1 px-2.5 py-1.5 text-xs rounded-xl border border-[#E2E0D8] bg-white/60"
                     />
@@ -705,8 +806,9 @@ export const YoutubeView: React.FC = () => {
                         </button>
                         <button
                           type="button"
-                          onClick={() => deleteMoment(m.id)}
-                          className="text-[#8E8E93] hover:text-red-600 p-1"
+                          onClick={() => setDeleteConfirm({ type: 'moment', id: m.id, title: 'Key Moment' })}
+                          className="text-[#8E8E93] hover:text-red-600 p-1 transition-colors"
+                          title="Delete moment"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -796,8 +898,8 @@ export const YoutubeView: React.FC = () => {
                       </button>
                       <button
                         type="button"
-                        onClick={() => deletePlaylist(pl.id)}
-                        className="p-1 text-[#8E8E93] hover:text-red-600"
+                        onClick={() => setDeleteConfirm({ type: 'playlist', id: pl.id, title: pl.name })}
+                        className="p-1 text-[#8E8E93] hover:text-red-600 transition-colors"
                         title="Delete playlist"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -951,6 +1053,23 @@ export const YoutubeView: React.FC = () => {
           )}
         </div>
       )}
+
+      <ConfirmModal
+        open={!!deleteConfirm}
+        title={deleteConfirm?.type === 'playlist' ? 'Delete Playlist' : 'Delete Moment'}
+        message="Are you sure you want to Delete ?"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        tone="danger"
+        onConfirm={() => {
+          if (deleteConfirm) {
+            if (deleteConfirm.type === 'moment') deleteMoment(deleteConfirm.id);
+            else if (deleteConfirm.type === 'playlist') deletePlaylist(deleteConfirm.id);
+            setDeleteConfirm(null);
+          }
+        }}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </div>
   );
 };

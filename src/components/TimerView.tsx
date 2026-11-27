@@ -1,13 +1,13 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Check,
   Clock,
   Flame,
+  PenLine,
   Timer,
   Trash2,
-  Volume2,
-  VolumeX,
 } from 'lucide-react';
+import { ConfirmModal } from './ConfirmModal';
 import { FloatingTimerWidget } from './FloatingTimerWidget';
 
 export interface StudySessionLog {
@@ -18,8 +18,10 @@ export interface StudySessionLog {
 }
 
 export interface TimerViewProps {
-  mode: 'countdown' | 'stopwatch';
-  setMode: (m: 'countdown' | 'stopwatch') => void;
+  mode: 'countdown' | 'pomodoro' | 'stopwatch';
+  setMode: (m: 'countdown' | 'pomodoro' | 'stopwatch') => void;
+  pomoPhase: 'focus' | 'shortBreak' | 'longBreak';
+  onSelectPomoPhase: (phase: 'focus' | 'shortBreak' | 'longBreak') => void;
   customMins: number;
   countdownLeft: number;
   stopwatchElapsed: number;
@@ -30,10 +32,9 @@ export interface TimerViewProps {
   sessionLabel: string;
   setSessionLabel: (val: string) => void;
   sessions: StudySessionLog[];
+  focusCount: number;
   handleSaveSession: () => void;
   deleteSession: (id: string) => void;
-  ambientOn: boolean;
-  setAmbientOn: (fn: (prev: boolean) => boolean) => void;
   midpointAcked?: boolean;
   onMidpointAck?: () => void;
   victoryDismissed?: boolean;
@@ -43,6 +44,8 @@ export interface TimerViewProps {
 export const TimerView: React.FC<TimerViewProps> = ({
   mode,
   setMode,
+  pomoPhase,
+  onSelectPomoPhase,
   customMins,
   countdownLeft,
   stopwatchElapsed,
@@ -53,20 +56,28 @@ export const TimerView: React.FC<TimerViewProps> = ({
   sessionLabel,
   setSessionLabel,
   sessions,
+  focusCount,
   handleSaveSession,
   deleteSession,
-  ambientOn,
-  setAmbientOn,
   midpointAcked,
   onMidpointAck,
   victoryDismissed,
   onVictoryDismiss,
 }) => {
-  const displaySeconds = mode === 'countdown' ? countdownLeft : stopwatchElapsed;
+  const displaySeconds =
+    mode === 'countdown' || mode === 'pomodoro' ? countdownLeft : stopwatchElapsed;
 
-  const totalTarget = customMins * 60;
+  const targetMins =
+    mode === 'pomodoro'
+      ? pomoPhase === 'focus'
+        ? 25
+        : pomoPhase === 'shortBreak'
+        ? 5
+        : 15
+      : customMins;
+  const totalTarget = targetMins * 60;
   const progressPct =
-    mode === 'countdown' && totalTarget > 0
+    (mode === 'countdown' || mode === 'pomodoro') && totalTarget > 0
       ? Math.min(100, Math.max(0, ((totalTarget - countdownLeft) / totalTarget) * 100))
       : ((stopwatchElapsed % 3600) / 3600) * 100;
 
@@ -74,6 +85,15 @@ export const TimerView: React.FC<TimerViewProps> = ({
     (sum, s) => sum + Math.max(1, Math.round(s.durationSeconds / 60)),
     0
   );
+
+  // Local string state so user can clear the field with Backspace without it instantly resetting
+  const [minInputStr, setMinInputStr] = useState<string>(() => String(customMins));
+  const [isEditingLabel, setIsEditingLabel] = useState(false);
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMinInputStr(String(customMins));
+  }, [customMins]);
 
   return (
     <div className="space-y-6">
@@ -92,42 +112,39 @@ export const TimerView: React.FC<TimerViewProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           <div className="px-3 py-1.5 rounded-xl paper-card text-xs font-semibold text-[#9B5B76] inline-flex items-center gap-1.5">
             <Flame className="w-3.5 h-3.5" />
-            {totalMinutesLogged}m focused
+            {focusCount}x focused · {totalMinutesLogged}m
           </div>
 
-          <button
-            type="button"
-            onClick={() => setAmbientOn((v) => !v)}
-            className={`ios-press px-3 py-1.5 rounded-xl border text-xs font-semibold inline-flex items-center gap-1.5 transition-colors ${
-              ambientOn
-                ? 'bg-[#9B5B76] text-white border-[#9B5B76]'
-                : 'paper-card border-[#E2E0D8] text-[#52525B]'
-            }`}
-            title="Soft brown-noise ambient focus sound"
-          >
-            {ambientOn ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-            {ambientOn ? 'Rain Hum ON' : 'Rain Hum'}
-          </button>
-
-          <div className="flex items-center gap-1 bg-black/5 rounded-xl p-1">
+          <div className="flex items-center gap-1 bg-black/5 dark:bg-white/10 rounded-xl p-1">
             <button
               type="button"
               onClick={() => setMode('countdown')}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
                 mode === 'countdown'
-                  ? 'bg-[#9B5B76] text-white'
-                  : 'text-[#6E6E73] hover:text-[#1C1C1E]'
+                  ? 'bg-[#9B5B76] text-white shadow-xs'
+                  : 'text-[#6E6E73] hover:text-[#1C1C1E] dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10'
               }`}
             >
               Countdown
             </button>
             <button
               type="button"
+              onClick={() => setMode('pomodoro')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                mode === 'pomodoro'
+                  ? 'bg-[#9B5B76] text-white shadow-xs'
+                  : 'text-[#6E6E73] hover:text-[#1C1C1E] dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10'
+              }`}
+            >
+              Pomodoro
+            </button>
+            <button
+              type="button"
               onClick={() => setMode('stopwatch')}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
                 mode === 'stopwatch'
-                  ? 'bg-[#9B5B76] text-white'
-                  : 'text-[#6E6E73] hover:text-[#1C1C1E]'
+                  ? 'bg-[#9B5B76] text-white shadow-xs'
+                  : 'text-[#6E6E73] hover:text-[#1C1C1E] dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10'
               }`}
             >
               Stopwatch
@@ -139,15 +156,43 @@ export const TimerView: React.FC<TimerViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
         {/* Main Interactive Timer Card */}
         <div className="lg:col-span-7 paper-card rounded-2xl p-6 sm:p-8 space-y-6">
-          {/* Focus Intent Pill */}
+          {/* Focus Intent: Dotted blank space with "What are you focusing on?" text & pen symbol */}
           <div className="flex justify-center">
-            <input
-              type="text"
-              value={sessionLabel}
-              onChange={(e) => setSessionLabel(e.target.value)}
-              placeholder="What are you focusing on? (e.g. Calculus Ch. 4)"
-              className="w-full max-w-sm text-center px-4 py-2 text-xs font-semibold rounded-full border border-[#E2E0D8] bg-white/50 focus:outline-none focus:border-[#9B5B76]"
-            />
+            {isEditingLabel ? (
+              <div className="w-full max-w-sm flex items-center gap-2 border-2 border-dashed border-[#9B5B76] bg-white/70 dark:bg-white/10 rounded-full px-4 py-1.5 shadow-2xs">
+                <input
+                  type="text"
+                  autoFocus
+                  value={sessionLabel}
+                  onChange={(e) => setSessionLabel(e.target.value)}
+                  onBlur={() => setIsEditingLabel(false)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') setIsEditingLabel(false);
+                  }}
+                  placeholder="What are you focusing on?"
+                  className="w-full text-center text-xs font-semibold bg-transparent focus:outline-none text-[#1C1C1E] dark:text-white"
+                />
+                <button
+                  type="button"
+                  onClick={() => setIsEditingLabel(false)}
+                  className="text-[11px] font-bold text-[#9B5B76] hover:text-[#874D65] px-1 shrink-0"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsEditingLabel(true)}
+                title="Click to edit focus topic"
+                className="group border-2 border-dashed border-[#C4C2BA] dark:border-white/20 hover:border-[#9B5B76] dark:hover:border-[#9B5B76] rounded-full px-5 py-2 inline-flex items-center gap-2.5 transition-all text-xs font-semibold bg-white/30 dark:bg-white/5 hover:bg-white/60 dark:hover:bg-white/10"
+              >
+                <span className={sessionLabel ? 'text-[#1C1C1E] dark:text-white' : 'text-[#8E8E93] dark:text-zinc-400'}>
+                  {sessionLabel || 'What are you focusing on?'}
+                </span>
+                <PenLine className="w-3.5 h-3.5 text-[#9B5B76] opacity-75 group-hover:opacity-100 group-hover:scale-110 transition-all shrink-0" />
+              </button>
+            )}
           </div>
 
           {/* Semi-Circle Rotary Shinchan Timer (same design as Floating Bar) */}
@@ -160,6 +205,7 @@ export const TimerView: React.FC<TimerViewProps> = ({
               sessionLabel={sessionLabel}
               onToggleRunning={() => setRunning((r) => !r)}
               onRestart={handleReset}
+              onLogSession={handleSaveSession}
               midpointAcked={midpointAcked}
               onMidpointAck={onMidpointAck}
               victoryDismissed={victoryDismissed}
@@ -167,36 +213,109 @@ export const TimerView: React.FC<TimerViewProps> = ({
             />
           </div>
 
-          {mode === 'countdown' && (
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              {[15, 30, 45, 60, 90].map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => applyPresetMinutes(m)}
-                  className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-colors ${
-                    customMins === m
-                      ? 'bg-[#9B5B76] text-white border-[#9B5B76]'
-                      : 'border-[#E2E0D8] bg-white/40 text-[#52525B] hover:text-[#1C1C1E]'
-                  }`}
-                >
-                  {m}m
-                </button>
-              ))}
-              <div className="flex items-center gap-1.5 ml-1">
-                <input
-                  type="number"
-                  min={1}
-                  max={300}
-                  value={customMins}
-                  onChange={(e) => {
-                    const val = Math.max(1, Math.min(300, Number(e.target.value) || 1));
-                    applyPresetMinutes(val);
-                  }}
-                  className="w-16 px-2.5 py-1.5 text-xs text-center font-mono-num rounded-xl border border-[#E2E0D8] bg-white/60"
-                />
-                <span className="text-[11px] text-[#8E8E93]">min</span>
+          {mode === 'pomodoro' && (
+            <div className="flex items-center justify-center">
+              <div className="inline-flex items-center gap-1 p-1.5 rounded-2xl bg-black/[0.05] dark:bg-white/10 border border-[#E2E0D8]/70 dark:border-white/10">
+                {(
+                  [
+                    { id: 'focus', label: 'Focus', sub: '25m', color: '#9B5B76' },
+                    { id: 'shortBreak', label: 'Short Break', sub: '5m', color: '#1B5E5A' },
+                    { id: 'longBreak', label: 'Long Break', sub: '15m', color: '#0A5386' },
+                  ] as const
+                ).map((ph) => {
+                  const active = pomoPhase === ph.id;
+                  return (
+                    <button
+                      key={ph.id}
+                      type="button"
+                      onClick={() => onSelectPomoPhase(ph.id)}
+                      style={active ? { backgroundColor: ph.color } : undefined}
+                      className={`ios-press px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        active
+                          ? 'text-white shadow-md'
+                          : 'text-[#52525B] hover:text-[#1C1C1E] dark:text-zinc-300 dark:hover:text-white hover:bg-white/50 dark:hover:bg-white/10'
+                      }`}
+                    >
+                      <span>{ph.label}</span>
+                      <span
+                        className={`text-[10px] font-mono-num px-1.5 py-0.5 rounded-full ${
+                          active ? 'bg-white/20 text-white' : 'bg-black/5 dark:bg-white/10 text-[#8E8E93] dark:text-zinc-400'
+                        }`}
+                      >
+                        {ph.sub}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
+            </div>
+          )}
+
+          {mode === 'countdown' && (
+            <div className="flex items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const next = Math.max(1, customMins - 5);
+                  setMinInputStr(String(next));
+                  applyPresetMinutes(next);
+                }}
+                disabled={customMins <= 1}
+                title="Decrease 5 minutes"
+                className="ios-press w-8 h-8 rounded-full border border-[#E2E0D8] bg-white/70 flex items-center justify-center text-sm font-bold text-[#52525B] hover:text-[#1C1C1E] hover:bg-white shadow-2xs transition-all disabled:opacity-30"
+              >
+                −
+              </button>
+              <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-[#E2E0D8] bg-white/80 shadow-2xs focus-within:border-[#9B5B76] focus-within:ring-2 focus-within:ring-[#9B5B76]/20 transition-all">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={minInputStr}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onChange={(e) => {
+                    const raw = e.target.value.replace(/\D/g, '');
+                    setMinInputStr(raw);
+                    if (raw !== '') {
+                      const num = parseInt(raw, 10);
+                      if (num >= 1 && num <= 300) {
+                        applyPresetMinutes(num);
+                      }
+                    }
+                  }}
+                  onBlur={() => {
+                    if (!minInputStr || parseInt(minInputStr, 10) < 1) {
+                      setMinInputStr(String(customMins || 25));
+                      applyPresetMinutes(customMins || 25);
+                    } else {
+                      const clamped = Math.max(1, Math.min(300, parseInt(minInputStr, 10)));
+                      setMinInputStr(String(clamped));
+                      applyPresetMinutes(clamped);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  className="w-12 text-center font-bold text-sm font-mono-num bg-transparent focus:outline-none text-[#1C1C1E]"
+                  placeholder="min"
+                />
+                <span className="text-xs font-semibold text-[#8E8E93]">min</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = Math.min(300, customMins + 5);
+                  setMinInputStr(String(next));
+                  applyPresetMinutes(next);
+                }}
+                disabled={customMins >= 300}
+                title="Increase 5 minutes"
+                className="ios-press w-8 h-8 rounded-full border border-[#E2E0D8] bg-white/70 flex items-center justify-center text-sm font-bold text-[#52525B] hover:text-[#1C1C1E] hover:bg-white shadow-2xs transition-all disabled:opacity-30"
+              >
+                +
+              </button>
             </div>
           )}
 
@@ -244,8 +363,9 @@ export const TimerView: React.FC<TimerViewProps> = ({
                     </div>
                     <button
                       type="button"
-                      onClick={() => deleteSession(s.id)}
-                      className="text-[#8E8E93] hover:text-red-600 p-1"
+                      onClick={() => setSessionToDelete(s.id)}
+                      className="text-[#8E8E93] hover:text-red-600 p-1 transition-colors"
+                      title="Delete session"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -256,6 +376,22 @@ export const TimerView: React.FC<TimerViewProps> = ({
           )}
         </div>
       </div>
+
+      <ConfirmModal
+        open={!!sessionToDelete}
+        title="Delete Focus Session"
+        message="Are you sure you want to Delete ?"
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        tone="danger"
+        onConfirm={() => {
+          if (sessionToDelete) {
+            deleteSession(sessionToDelete);
+            setSessionToDelete(null);
+          }
+        }}
+        onCancel={() => setSessionToDelete(null)}
+      />
     </div>
   );
 };

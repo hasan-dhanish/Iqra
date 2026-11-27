@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark-theme, .dark-theme *));
 
 @layer base {
   :root {
@@ -711,6 +712,14 @@
 
 .dark-theme * {
   scrollbar-color: rgba(125, 211, 252, 0.35) transparent;
+}
+
+/* Ensure hover text does not turn near-black on dark backgrounds */
+.dark-theme .hover\:text-\[\#1C1C1E\]:hover,
+.dark-theme .hover\:text-\[\#18181B\]:hover,
+.dark-theme .hover\:text-\[\#1C1C1E\]:focus,
+.dark-theme .hover\:text-\[\#18181B\]:focus {
+  color: #ffffff !important;
 }
 
 .dark-theme *::-webkit-scrollbar-thumb {

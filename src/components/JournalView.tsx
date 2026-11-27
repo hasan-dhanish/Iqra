@@ -506,11 +506,11 @@ export const JournalView: React.FC = () => {
       <div className="space-y-7">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-1">
           <div>
-            <h1 className="text-xl font-semibold text-[#18181B]">
-              Live Notes &amp; Idea Books
+            <h1 className="text-xl font-semibold text-[#18181B] dark:text-white">
+              Book Shelf
             </h1>
-            <p className="text-xs text-[#71717A] mt-0.5">
-              Create books and open them to add separate pages.
+            <p className="text-xs text-[#71717A] dark:text-zinc-400 mt-0.5">
+              Your 3D notebook shelf — open any book to read and write study notes.
             </p>
           </div>
 

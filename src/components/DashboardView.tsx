@@ -1,48 +1,123 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
-  BookMarked,
   BookOpen,
-  CalendarDays,
   CheckCircle2,
-  Circle,
-  Clock,
-  GraduationCap,
-  Plus,
-  Trash2,
+  Flame,
+  FolderOpen,
+  Library,
+  Timer,
+  Tv,
 } from 'lucide-react';
-import { DAYS_OF_WEEK, formatDateShort, getDeadlineUrgency } from '../constants';
 import { useLdoi } from '../context/LdoiContext';
-import { getJournalPlainText } from '../lib/pinboard';
+import {
+  calcDayCompletionPct,
+  calcOverallDailyStreak,
+  loadHabits,
+  toIsoDate,
+  type HabitItem,
+} from '../lib/habits';
 import type { ActiveTab } from '../types';
-import { FolderCard } from './FolderCard';
 import { SevenSegmentClock } from './SevenSegmentClock';
+import type { StudyFolder } from './StudyFoldersView';
 
 interface DashboardViewProps {
+  darkMode?: boolean;
   onNavigate: (tab: ActiveTab) => void;
-  onOpenProject: (projectId: string) => void;
+  onOpenFolder?: (folder: StudyFolder) => void;
+  timerSeconds?: number;
+  timerRunning?: boolean;
+  onToggleTimer?: () => void;
 }
 
-export const DashboardView: React.FC<DashboardViewProps> = ({
-  onNavigate,
-  onOpenProject,
-}) => {
-  const {
-    currentUser,
-    projects,
-    syllabusTopics,
-    timetableSlots,
-    assignments,
-    exams,
-    studyGoals,
-    journalEntries,
-    addStudyGoal,
-    toggleStudyGoal,
-    deleteStudyGoal,
-    updateAssignment,
-  } = useLdoi();
+interface DeskHotspot {
+  id: string;
+  tab: ActiveTab;
+  label: string;
+  subtitle: string;
+  accent: string;
+  icon: React.ComponentType<{ className?: string }>;
+  day: { left: string; top: string; width: string; height: string };
+  night: { left: string; top: string; width: string; height: string };
+  labelPosition?: 'top' | 'bottom';
+}
 
+const DESK_HOTSPOTS: DeskHotspot[] = [
+  {
+    id: 'notebook',
+    tab: 'notebooks',
+    label: 'Book Shelf',
+    subtitle: 'Open your study notebooks',
+    accent: '#1B5E5A',
+    icon: BookOpen,
+    day: { left: '35%', top: '76%', width: '34%', height: '23%' },
+    night: { left: '35%', top: '76%', width: '34%', height: '23%' },
+    labelPosition: 'top',
+  },
+  {
+    id: 'folder',
+    tab: 'matrix',
+    label: 'Folder Shelf',
+    subtitle: 'Open folders & study matrix',
+    accent: '#254454',
+    icon: FolderOpen,
+    day: { left: '53%', top: '67%', width: '25%', height: '19%' },
+    night: { left: '53%', top: '67%', width: '25%', height: '19%' },
+    labelPosition: 'top',
+  },
+  {
+    id: 'tablet',
+    tab: 'youtube',
+    label: 'Youtube',
+    subtitle: 'Watch study lectures',
+    accent: '#A43850',
+    icon: Tv,
+    day: { left: '24%', top: '55%', width: '20%', height: '29%' },
+    night: { left: '24%', top: '55%', width: '20%', height: '29%' },
+    labelPosition: 'top',
+  },
+  {
+    id: 'timer',
+    tab: 'timer',
+    label: 'Focus Timer',
+    subtitle: 'Start Pomodoro or countdown',
+    accent: '#9B5B76',
+    icon: Timer,
+    day: { left: '43%', top: '56%', width: '10%', height: '17%' },
+    night: { left: '43%', top: '56%', width: '10%', height: '17%' },
+    labelPosition: 'top',
+  },
+  {
+    id: 'habits',
+    tab: 'tracker',
+    label: 'Habit Tracker',
+    subtitle: 'Check daily streaks & habits',
+    accent: '#133F47',
+    icon: CheckCircle2,
+    day: { left: '77%', top: '58%', width: '10.5%', height: '15%' },
+    night: { left: '77%', top: '58%', width: '10.5%', height: '15%' },
+    labelPosition: 'top',
+  },
+  {
+    id: 'files',
+    tab: 'resources',
+    label: 'My Files',
+    subtitle: 'Browse study PDFs & resources',
+    accent: '#5B3A70',
+    icon: Library,
+    day: { left: '80.5%', top: '71%', width: '19%', height: '23%' },
+    night: { left: '80.5%', top: '71%', width: '19%', height: '23%' },
+    labelPosition: 'top',
+  },
+];
+
+export const DashboardView: React.FC<DashboardViewProps> = ({
+  darkMode = false,
+  onNavigate,
+}) => {
+  const { currentUser } = useLdoi();
   const myName = currentUser?.name ?? 'Sajitha';
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   // Live clock
   const [now, setNow] = useState(() => new Date());
@@ -51,69 +126,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return () => window.clearInterval(timer);
   }, []);
 
-  // Quick study goal input
-  const [newGoalTitle, setNewGoalTitle] = useState('');
-  const handleAddGoal = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newGoalTitle.trim()) return;
-    await addStudyGoal({
-      title: newGoalTitle.trim(),
-      targetDate: new Date().toISOString().slice(0, 10),
-      completed: false,
-      owner: myName,
-    });
-    setNewGoalTitle('');
-  };
-
-  // Weekday index: Monday = 0 .. Sunday = 6
-  const jsDay = now.getDay();
-  const todayIdx = jsDay === 0 ? 6 : jsDay - 1;
-  const todaySlots = useMemo(
-    () =>
-      timetableSlots
-        .filter((s) => s.dayOfWeek === todayIdx)
-        .sort((a, b) => a.startTime.localeCompare(b.startTime)),
-    [timetableSlots, todayIdx]
-  );
-
-  const activeSubjects = projects.filter(
-    (p) => p.status !== 'Archived' && p.status !== 'Completed'
-  );
-
-  const pendingAssignments = assignments.filter(
-    (a) => a.status !== 'Submitted' && a.status !== 'Graded'
-  );
-
-  const upcomingDeadlines = useMemo(() => {
-    const items = [
-      ...pendingAssignments.map((a) => ({
-        id: a.id,
-        kind: 'Assignment' as const,
-        title: a.title,
-        subject: projects.find((p) => p.id === a.projectId)?.title ?? 'General',
-        date: a.dueDate,
-        owner: a.owner,
-        status: a.status,
-      })),
-      ...exams.map((ex) => ({
-        id: ex.id,
-        kind: 'Exam' as const,
-        title: ex.title,
-        subject: projects.find((p) => p.id === ex.projectId)?.title ?? 'General',
-        date: ex.examDate,
-        owner: ex.owner,
-        status: `${ex.prepProgress}% ready`,
-      })),
-    ];
-    return items
-      .map((item) => ({ ...item, urgency: getDeadlineUrgency(item.date) }))
-      .sort((a, b) => (a.urgency.daysLeft ?? 999) - (b.urgency.daysLeft ?? 999))
-      .slice(0, 6);
-  }, [pendingAssignments, exams, projects]);
-
-  const totalTopics = syllabusTopics.length;
-  const completedTopics = syllabusTopics.filter((t) => t.status === 'Completed').length;
-  const overallProgress = totalTopics > 0 ? Math.round((completedTopics / totalTopics) * 100) : 0;
+  const todayIso = useMemo(() => toIsoDate(new Date()), []);
+  const [habits] = useState<HabitItem[]>(() => loadHabits());
+  const streakDays = useMemo(() => calcOverallDailyStreak(habits, todayIso), [habits, todayIso]);
+  const todayPct = useMemo(() => calcDayCompletionPct(habits, todayIso), [habits, todayIso]);
 
   const weekday = now.toLocaleDateString('en-IN', { weekday: 'long' });
   const dateLabel = now.toLocaleDateString('en-IN', {
@@ -130,366 +146,151 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     now.getHours() < 12
       ? 'Good morning'
       : now.getHours() < 17
-      ? 'Good afternoon'
-      : 'Good evening';
+        ? 'Good afternoon'
+        : 'Good evening';
 
   return (
-    <div className="space-y-6">
-      {/* Top Row: StandBy Digital Clock + Focus Pomodoro Widget */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div className="paper-card rounded-2xl px-4 py-3 flex items-center gap-4 border border-[#E2E0D8] shadow-xs w-fit">
-          <SevenSegmentClock
-            hours={hoursStr}
-            minutes={minsStr}
-            seconds={secsStr}
-            period={periodStr}
-          />
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#9B5B76] shrink-0" />
-              <span className="text-xs font-bold uppercase tracking-wider text-[#9B5B76]">
-                {weekday}
-              </span>
-              <span className="text-xs font-medium text-[#8E8E93]">· {dateLabel}</span>
-            </div>
-            <h1 className="mt-0.5 text-sm sm:text-base font-semibold text-[#1C1C1E] truncate">
-              {greeting}, {myName}
-            </h1>
-          </div>
-        </div>
-      </div>
+    <div className="md:h-full w-full flex items-center justify-center">
+      {/* Centered 16:9 FPV Study Desk Stage so hotspot % coordinates stay pixel-locked */}
+      <div className="relative w-full max-w-[1380px] aspect-video max-h-full rounded-[28px] overflow-hidden shadow-[0_24px_60px_rgba(0,0,0,0.28)] border border-white/50 dark:border-white/12 bg-[#111317] select-none">
+        {/* Day FPV Scene */}
+        <img
+          src="/fpv-desk-day.jpg"
+          alt="Sajitha's Morning Study Desk FPV"
+          draggable={false}
+          className="absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ease-in-out"
+          style={{ opacity: darkMode ? 0 : 1 }}
+        />
 
-      {/* Summary Widget Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <button
-          type="button"
-          onClick={() => onNavigate('tracker')}
-          className="paper-card rounded-2xl p-4 flex items-center gap-3.5 text-left hover:shadow-sm transition-shadow"
-        >
-          <div className="w-10 h-10 rounded-xl bg-[#133F47] text-white flex items-center justify-center shrink-0">
-            <CalendarDays className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-semibold text-[#8E8E93]">Daily Planner</div>
-            <div className="text-xl font-bold font-mono-num text-[#1C1C1E]">
-              Plan &amp; Check
-            </div>
-          </div>
-        </button>
+        {/* Night / Sunset FPV Scene */}
+        <img
+          src="/fpv-desk-night.jpg"
+          alt="Sajitha's Sunset Study Desk FPV"
+          draggable={false}
+          className="absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ease-in-out"
+          style={{ opacity: darkMode ? 1 : 0 }}
+        />
 
-        <button
-          type="button"
-          onClick={() => onNavigate('matrix')}
-          className="paper-card rounded-2xl p-4 flex items-center gap-3.5 text-left hover:shadow-sm transition-shadow"
-        >
-          <div className="w-10 h-10 rounded-xl bg-[#254454] text-white flex items-center justify-center shrink-0">
-            <BookMarked className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-semibold text-[#8E8E93]">Study Matrix</div>
-            <div className="text-xl font-bold font-mono-num text-[#1C1C1E]">
-              Open
-            </div>
-          </div>
-        </button>
+        {/* Subtle Top Vignette for HUD legibility */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/35 via-black/10 to-transparent"
+        />
 
-        <button
-          type="button"
-          onClick={() => onNavigate('timer')}
-          className="paper-card rounded-2xl p-4 flex items-center gap-3.5 text-left hover:shadow-sm transition-shadow"
-        >
-          <div className="w-10 h-10 rounded-xl bg-[#8B1E1E] text-white flex items-center justify-center shrink-0">
-            <GraduationCap className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-[11px] font-semibold text-[#8E8E93]">Pending &amp; Exams</div>
-            <div className="text-xl font-bold font-mono-num text-[#1C1C1E]">
-              {pendingAssignments.length + exams.length}
-            </div>
-          </div>
-        </button>
-
-        <div className="paper-card rounded-2xl p-4 flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-[#0A5386] text-white flex items-center justify-center shrink-0">
-            <Clock className="w-5 h-5" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[11px] font-semibold text-[#8E8E93]">Syllabus Progress</div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-xl font-bold font-mono-num text-[#1C1C1E]">
-                {overallProgress}%
-              </span>
-              <span className="text-[11px] text-[#8E8E93]">
-                ({completedTopics}/{totalTopics})
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main 2-Column Workspace: Today's Timetable & Goals | Upcoming Exams & Assignments */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Today's Schedule + Study Goals */}
-        <div className="paper-card rounded-2xl p-5 space-y-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-bold text-[#1C1C1E]">
-                {DAYS_OF_WEEK[todayIdx]}&apos;s Timetable
-              </h2>
-              <p className="text-xs text-[#8E8E93]">Scheduled classes &amp; study sessions</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNavigate('tracker')}
-              className="text-xs font-semibold text-[#0A5386] hover:underline inline-flex items-center gap-1"
-            >
-              Daily Planner <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {todaySlots.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-[#D6D3CB] p-4 text-center text-xs text-[#8E8E93]">
-              No sessions scheduled for {DAYS_OF_WEEK[todayIdx]}. Add blocks in Timetable &amp; Plan.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {todaySlots.map((slot) => {
-                const subj = projects.find((p) => p.id === slot.projectId);
-                return (
-                  <div
-                    key={slot.id}
-                    className="flex items-center justify-between gap-3 p-2.5 rounded-xl border border-[#E2E0D8]/80 bg-white/40"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span
-                        className="w-1.5 h-8 rounded-full shrink-0"
-                        style={{ backgroundColor: slot.colorHex || '#0A5386' }}
-                      />
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-[#1C1C1E] truncate">
-                          {slot.title}
-                        </div>
-                        <div className="text-[11px] text-[#8E8E93] truncate">
-                          {slot.startTime} – {slot.endTime} · {slot.kind}
-                          {subj ? ` · ${subj.title}` : ''}
-                        </div>
-                      </div>
-                    </div>
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-black/5 text-[#52525B] shrink-0">
-                      {slot.owner}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Daily Study Goals */}
-          <div className="pt-3 border-t border-[#E2E0D8]/80 space-y-2.5">
-            <div className="text-xs font-bold text-[#1C1C1E]">Daily Study Goals</div>
-            <form onSubmit={handleAddGoal} className="flex gap-2">
-              <input
-                type="text"
-                value={newGoalTitle}
-                onChange={(e) => setNewGoalTitle(e.target.value)}
-                placeholder="Add a study goal for today..."
-                className="flex-1 px-3 py-1.5 text-xs rounded-xl border border-[#E2E0D8] bg-white/60 focus:outline-none focus:border-[#0A5386]"
-              />
-              <button
-                type="submit"
-                className="ios-press px-3 py-1.5 rounded-xl bg-[#0A5386] text-white text-xs font-semibold inline-flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" /> Add
-              </button>
-            </form>
-
-            {studyGoals.length > 0 && (
-              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                {studyGoals.map((goal) => (
-                  <div
-                    key={goal.id}
-                    className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg hover:bg-black/5 transition-colors"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => toggleStudyGoal(goal.id)}
-                      className="flex items-center gap-2 text-left min-w-0 flex-1"
-                    >
-                      {goal.completed ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                      ) : (
-                        <Circle className="w-4 h-4 text-[#8E8E93] shrink-0" />
-                      )}
-                      <span
-                        className={`text-xs truncate ${
-                          goal.completed ? 'line-through text-[#8E8E93]' : 'text-[#1C1C1E]'
-                        }`}
-                      >
-                        {goal.title}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => deleteStudyGoal(goal.id)}
-                      className="text-[#8E8E93] hover:text-red-600 p-1"
-                      title="Delete goal"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
+        {/* Top Floating HUD: Clock + Greeting (Left) & Streak Pill (Right) */}
+        <div className="relative z-20 flex flex-wrap items-start justify-between gap-3 p-3.5 sm:p-5 pointer-events-none">
+          <div className="pointer-events-auto paper-card rounded-2xl px-3.5 py-2 flex items-center gap-3.5 border border-white/60 dark:border-white/15 shadow-lg backdrop-blur-xl">
+            <SevenSegmentClock
+              hours={hoursStr}
+              minutes={minsStr}
+              seconds={secsStr}
+              period={periodStr}
+            />
+            <div className="min-w-0 pr-1">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#9B5B76] shrink-0" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#9B5B76]">
+                  {weekday}
+                </span>
+                <span className="text-[11px] font-medium text-[#6E6E73] dark:text-zinc-300">
+                  · {dateLabel}
+                </span>
               </div>
-            )}
-          </div>
-        </div>
-
-        {/* Upcoming Exams & Assignments */}
-        <div className="paper-card rounded-2xl p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-bold text-[#1C1C1E]">Upcoming Exams &amp; Assignments</h2>
-              <p className="text-xs text-[#8E8E93]">Sorted by nearest deadline</p>
+              <h1 className="mt-0.5 text-sm font-semibold text-[#1C1C1E] dark:text-white truncate">
+                {greeting}, {myName}
+              </h1>
             </div>
-            <button
-              type="button"
-              onClick={() => onNavigate('tracker')}
-              className="text-xs font-semibold text-[#8B1E1E] hover:underline inline-flex items-center gap-1"
-            >
-              Daily Planner <ArrowRight className="w-3.5 h-3.5" />
-            </button>
           </div>
 
-          {upcomingDeadlines.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-[#D6D3CB] p-6 text-center text-xs text-[#8E8E93]">
-              No upcoming assignments or exams yet. Add them in Exams &amp; Assignments.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {upcomingDeadlines.map((item) => (
-                <div
-                  key={`${item.kind}-${item.id}`}
-                  className="flex items-center justify-between gap-3 p-3 rounded-xl border border-[#E2E0D8]/80 bg-white/40"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          item.kind === 'Exam'
-                            ? 'bg-[#8B1E1E]/15 text-[#8B1E1E]'
-                            : 'bg-[#0A5386]/15 text-[#0A5386]'
-                        }`}
-                      >
-                        {item.kind}
-                      </span>
-                      <span className="text-xs font-bold text-[#1C1C1E] truncate">
-                        {item.title}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-[#8E8E93] mt-0.5 truncate">
-                      {item.subject} · {formatDateShort(item.date)} · {item.owner}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        item.urgency.tone === 'overdue'
-                          ? 'bg-red-500/15 text-red-700'
-                          : item.urgency.tone === 'today' || item.urgency.tone === 'soon'
-                          ? 'bg-amber-500/15 text-amber-700'
-                          : 'bg-black/5 text-[#52525B]'
-                      }`}
-                    >
-                      {item.urgency.label}
-                    </span>
-                    {item.kind === 'Assignment' && (
-                      <button
-                        type="button"
-                        onClick={() => updateAssignment(item.id, { status: 'Submitted' })}
-                        className="text-[10px] font-semibold px-2 py-1 rounded-lg bg-emerald-600/15 text-emerald-700 hover:bg-emerald-600/25"
-                        title="Mark Submitted"
-                      >
-                        Done
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Active Subjects Strip */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold text-[#1C1C1E]">Active Subjects</h2>
           <button
             type="button"
-            onClick={() => onNavigate('matrix')}
-            className="text-xs font-semibold text-[#0A5386] hover:underline inline-flex items-center gap-1"
+            onClick={() => onNavigate('tracker')}
+            className="pointer-events-auto ios-press paper-card rounded-2xl px-3.5 py-2 flex items-center gap-2.5 border border-white/60 dark:border-white/15 shadow-lg backdrop-blur-xl hover:scale-[1.02] transition-transform"
+            title="Open Habit Tracker"
           >
-            Open Matrix <ArrowRight className="w-3.5 h-3.5" />
+            <div className="w-8 h-8 rounded-full bg-[#133F47]/12 dark:bg-[#2DD4BF]/20 flex items-center justify-center text-[#133F47] dark:text-[#2DD4BF]">
+              <Flame className="w-4 h-4 text-amber-500" />
+            </div>
+            <div className="text-left">
+              <div className="text-xs font-extrabold font-mono-num text-[#1C1C1E] dark:text-white leading-tight">
+                {streakDays} {streakDays === 1 ? 'Day' : 'Days'} Streak
+              </div>
+              <div className="text-[10px] font-semibold text-[#133F47] dark:text-[#2DD4BF]">
+                {todayPct}% habits today
+              </div>
+            </div>
           </button>
         </div>
 
-        {activeSubjects.length === 0 ? (
-          <div className="paper-card rounded-2xl p-6 text-center text-xs text-[#8E8E93]">
-            No subjects added yet. Go to Subjects &amp; Syllabus to add your first course or learning plan.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {activeSubjects.slice(0, 3).map((subj) => {
-              const subjTopics = syllabusTopics.filter((t) => t.projectId === subj.id);
-              const doneCount = subjTopics.filter((t) => t.status === 'Completed').length;
-              return (
-                <FolderCard
-                  key={subj.id}
-                  project={subj}
-                  taskCount={subjTopics.length}
-                  completedCount={doneCount}
-                  docCount={0}
-                  assignees={[]}
-                  onClick={() => onOpenProject(subj.id)}
-                />
-              );
-            })}
-          </div>
-        )}
-      </div>
+        {/* Interactive Clickable Desk Object Hotspots */}
+        <div className="absolute inset-0 z-10">
+          {DESK_HOTSPOTS.map((spot) => {
+            const rect = darkMode ? spot.night : spot.day;
+            const isHovered = hoveredId === spot.id;
+            const Icon = spot.icon;
 
-      {/* Recent Study Notebooks */}
-      {journalEntries.length > 0 && (
-        <div className="paper-card rounded-2xl p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-[#1B5E5A]" />
-              <h2 className="text-sm font-bold text-[#1C1C1E]">Recent Study Notebooks</h2>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNavigate('notebooks')}
-              className="text-xs font-semibold text-[#1B5E5A] hover:underline inline-flex items-center gap-1"
-            >
-              Open Bookshelf <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {journalEntries.slice(0, 3).map((entry) => (
+            return (
               <button
-                key={entry.id}
+                key={spot.id}
                 type="button"
-                onClick={() => onNavigate('notebooks')}
-                className="text-left p-3 rounded-xl border border-[#E2E0D8]/80 bg-white/40 hover:bg-white/60 transition-colors"
+                onClick={() => onNavigate(spot.tab)}
+                onMouseEnter={() => setHoveredId(spot.id)}
+                onMouseLeave={() => setHoveredId((prev) => (prev === spot.id ? null : prev))}
+                aria-label={`Open ${spot.label}`}
+                style={{
+                  left: rect.left,
+                  top: rect.top,
+                  width: rect.width,
+                  height: rect.height,
+                }}
+                className="group absolute rounded-2xl cursor-pointer focus:outline-none transition-all duration-200"
               >
-                <div className="text-xs font-bold text-[#1C1C1E] truncate">{entry.title}</div>
-                <div className="text-[11px] text-[#8E8E93] line-clamp-2 mt-1">
-                  {getJournalPlainText(entry.content) || 'Empty notebook'}
+                {/* Soft Luminous Hover Outline */}
+                <span
+                  aria-hidden="true"
+                  className={`absolute inset-0 rounded-2xl transition-all duration-200 ${
+                    isHovered
+                      ? 'bg-white/12 ring-2 ring-white/80 shadow-[0_0_24px_rgba(255,255,255,0.45)]'
+                      : 'bg-transparent ring-0 hover:bg-white/8'
+                  }`}
+                />
+
+                {/* Floating Glass Label Pill on Hover */}
+                <div
+                  className={`pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2.5 px-3 py-1.5 rounded-xl bg-black/75 backdrop-blur-xl border border-white/20 text-white shadow-xl whitespace-nowrap flex items-center gap-2 transition-all duration-200 ${
+                    isHovered
+                      ? 'opacity-100 translate-y-0 scale-100'
+                      : 'opacity-0 translate-y-1.5 scale-95'
+                  }`}
+                >
+                  <span
+                    className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: spot.accent }}
+                  >
+                    <Icon className="w-3 h-3 text-white" />
+                  </span>
+                  <div className="text-left">
+                    <div className="text-[11px] font-bold leading-tight flex items-center gap-1">
+                      {spot.label}
+                      <ArrowRight className="w-3 h-3 opacity-80" />
+                    </div>
+                    <div className="text-[9px] text-white/70 leading-tight">
+                      {spot.subtitle}
+                    </div>
+                  </div>
                 </div>
               </button>
-            ))}
+            );
+          })}
+        </div>
+
+        {/* Subtle Bottom-Left Interactive Hint */}
+        <div className="pointer-events-none absolute bottom-3 left-3.5 sm:bottom-4 sm:left-5 z-20">
+          <div className="px-3 py-1 rounded-full bg-black/45 backdrop-blur-md border border-white/15 text-[10px] font-semibold text-white/90 shadow-sm">
+            Click any item on your desk to open it
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

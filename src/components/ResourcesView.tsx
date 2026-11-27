@@ -1,49 +1,44 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Bookmark,
+  Check,
   CheckCircle2,
   Cloud,
-  Code2,
   ExternalLink,
   FileSpreadsheet,
   FileText,
   Image as ImageIcon,
+  LayoutGrid,
   Library,
+  List,
   Loader2,
   LogOut,
+  Minimize2,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
   Trash2,
-  Upload,
-  Video,
   X,
 } from 'lucide-react';
 import {
   clearDriveToken,
-  fetchDriveFileJson,
   findOrCreateIqraFolder,
   getCachedDriveToken,
   getDriveEmbedUrl,
   getGoogleClientId,
   isEditableGoogleFile,
   listDriveFiles,
+  renameDriveFile,
   requestDriveToken,
   saveGoogleClientId,
   trashDriveFile,
-  uploadJsonResourceToDrive,
   uploadToDrive,
   type DriveFileItem,
-  type DriveSavedNoteResource,
 } from '../lib/googleDrive';
 
-type FilterKind = 'All' | 'Doc' | 'Sheet' | 'PDF' | 'Image' | 'Link';
+type FilterKind = 'All' | 'Doc' | 'Sheet' | 'PDF' | 'Image';
 
-function classifyDriveFile(
-  file: DriveFileItem,
-  meta?: DriveSavedNoteResource
-): Exclude<FilterKind, 'All'> {
-  if (meta) return 'Link';
+function classifyDriveFile(file: DriveFileItem): Exclude<FilterKind, 'All'> {
   if (file.mimeType.includes('spreadsheet') || file.mimeType.includes('csv')) return 'Sheet';
   if (
     file.mimeType === 'application/vnd.google-apps.document' ||
@@ -64,22 +59,30 @@ export const ResourcesView: React.FC = () => {
   const [driveToken, setDriveToken] = useState<string | null>(() => getCachedDriveToken());
   const [driveFolderId, setDriveFolderId] = useState<string | null>(null);
   const [driveFiles, setDriveFiles] = useState<DriveFileItem[]>([]);
-  const [jsonMetaMap, setJsonMetaMap] = useState<Record<string, DriveSavedNoteResource>>({});
   const [driveLoading, setDriveLoading] = useState(false);
-  const [driveUploading, setDriveUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [driveError, setDriveError] = useState<string | null>(null);
   const [convertEditable, setConvertEditable] = useState(true);
-  const [activeDriveFile, setActiveDriveFile] = useState<DriveFileItem | null>(null);
+
+  // Multi-tab viewer/editor workspace (open multiple PDFs, Docs, Sheets at once!)
+  const [openTabs, setOpenTabs] = useState<DriveFileItem[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [tabsMinimized, setTabsMinimized] = useState(false);
+
+  // Inline rename state
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
 
   const [kindFilter, setKindFilter] = useState<FilterKind>('All');
   const [search, setSearch] = useState('');
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [brokenThumbs, setBrokenThumbs] = useState<Set<string>>(() => new Set());
 
-  const [noteKind, setNoteKind] = useState<'Bookmark' | 'Video' | 'Snippet'>('Bookmark');
-  const [title, setTitle] = useState('');
-  const [url, setUrl] = useState('');
-  const [content, setContent] = useState('');
-  const [tagsRaw, setTagsRaw] = useState('');
+  // Multi-select (hover-to-select) & delete confirmation state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [confirmDeleteFiles, setConfirmDeleteFiles] = useState<DriveFileItem[] | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [matrixPinnedMsg, setMatrixPinnedMsg] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -90,29 +93,7 @@ export const ResourcesView: React.FC = () => {
       const folderId = await findOrCreateIqraFolder(token);
       setDriveFolderId(folderId);
       const files = await listDriveFiles(token, folderId);
-      setDriveFiles(files);
-
-      // Load metadata for any .iqra.json link/snippet resources
-      const jsonFiles = files.filter((f) => f.name.endsWith('.iqra.json'));
-      if (jsonFiles.length > 0) {
-        const entries = await Promise.all(
-          jsonFiles.map(async (jf) => {
-            try {
-              const data = await fetchDriveFileJson<DriveSavedNoteResource>(token, jf.id);
-              return [jf.id, data] as const;
-            } catch {
-              return null;
-            }
-          })
-        );
-        const map: Record<string, DriveSavedNoteResource> = {};
-        for (const item of entries) {
-          if (item) map[item[0]] = item[1];
-        }
-        setJsonMetaMap(map);
-      } else {
-        setJsonMetaMap({});
-      }
+      setDriveFiles(files.filter((f) => !f.name.endsWith('.iqra.json')));
     } catch (err) {
       setDriveError(err instanceof Error ? err.message : 'Failed to load Google Drive.');
       if (err instanceof Error && err.message.includes('401')) {
@@ -150,96 +131,180 @@ export const ResourcesView: React.FC = () => {
     setDriveToken(null);
     setDriveFolderId(null);
     setDriveFiles([]);
-    setJsonMetaMap({});
+    setOpenTabs([]);
+    setActiveTabId(null);
   };
 
+  // Direct 1-click bulk upload (no questions!)
   const handleDriveUpload = async (files: FileList | null) => {
     if (!files || files.length === 0 || !driveToken || !driveFolderId) return;
-    setDriveUploading(true);
+    const list = Array.from(files);
+    setUploadProgress({ done: 0, total: list.length });
     setDriveError(null);
     try {
-      for (const f of Array.from(files)) {
+      let done = 0;
+      for (const f of list) {
         await uploadToDrive(driveToken, driveFolderId, f, convertEditable);
+        done++;
+        setUploadProgress({ done, total: list.length });
       }
       await loadDriveFolder(driveToken);
     } catch (err) {
       setDriveError(err instanceof Error ? err.message : 'Upload failed.');
     } finally {
-      setDriveUploading(false);
+      setUploadProgress(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const handleAddLinkResource = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim() || !driveToken || !driveFolderId) return;
-    setDriveUploading(true);
+  const toggleSelectFile = (fileId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(fileId)) next.delete(fileId);
+      else next.add(fileId);
+      return next;
+    });
+  };
+
+  const executeConfirmedDelete = async () => {
+    if (!driveToken || !confirmDeleteFiles || confirmDeleteFiles.length === 0) return;
+    setIsDeleting(true);
     setDriveError(null);
+    const idsToRemove = new Set(confirmDeleteFiles.map((f) => f.id));
     try {
-      await uploadJsonResourceToDrive(driveToken, driveFolderId, {
-        kind: noteKind,
-        title: title.trim(),
-        url: url.trim() || undefined,
-        content: content.trim() || undefined,
-        tags: tagsRaw
-          .split(',')
-          .map((t) => t.trim())
-          .filter(Boolean),
+      for (const f of confirmDeleteFiles) {
+        await trashDriveFile(driveToken, f.id);
+      }
+      setDriveFiles((prev) => prev.filter((f) => !idsToRemove.has(f.id)));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        idsToRemove.forEach((id) => next.delete(id));
+        return next;
       });
-      setTitle('');
-      setUrl('');
-      setContent('');
-      setTagsRaw('');
-      setShowAddForm(false);
-      await loadDriveFolder(driveToken);
+      setOpenTabs((prev) => {
+        const next = prev.filter((t) => !idsToRemove.has(t.id));
+        if (activeTabId && idsToRemove.has(activeTabId)) {
+          setActiveTabId(next[next.length - 1]?.id ?? null);
+        }
+        return next;
+      });
+      setConfirmDeleteFiles(null);
     } catch (err) {
-      setDriveError(err instanceof Error ? err.message : 'Failed to save resource to Drive.');
+      setDriveError(err instanceof Error ? err.message : 'Could not delete file(s).');
     } finally {
-      setDriveUploading(false);
+      setIsDeleting(false);
     }
   };
 
-  const handleTrashDriveFile = async (fileId: string) => {
-    if (!driveToken) return;
+  const handleBulkOpenTabs = () => {
+    const chosen = driveFiles.filter((f) => selectedIds.has(f.id));
+    if (chosen.length === 0) return;
+    setOpenTabs((prev) => {
+      const existing = new Set(prev.map((t) => t.id));
+      const additions = chosen.filter((f) => !existing.has(f.id));
+      return [...prev, ...additions];
+    });
+    setActiveTabId(chosen[0].id);
+    setTabsMinimized(false);
+    setSelectedIds(new Set());
+  };
+
+  const handleBulkImportToMatrix = () => {
+    const chosen = driveFiles.filter((f) => selectedIds.has(f.id));
+    if (chosen.length === 0) return;
+    const key = 'iqra_matrix_drive_pins_iqra_study_matrix';
     try {
-      await trashDriveFile(driveToken, fileId);
-      setDriveFiles((prev) => prev.filter((f) => f.id !== fileId));
-    } catch (err) {
-      setDriveError(err instanceof Error ? err.message : 'Could not delete file.');
+      const raw = localStorage.getItem(key);
+      const existing = raw ? (JSON.parse(raw) as unknown[]) : [];
+      const newPins = chosen.map((file, idx) => ({
+        id: `dpin_${Date.now().toString(36)}_${idx}`,
+        file,
+        x: 160 + idx * 36,
+        y: 120 + idx * 36,
+        w: 420,
+        h: 360,
+      }));
+      localStorage.setItem(key, JSON.stringify([...existing, ...newPins]));
+      setMatrixPinnedMsg(
+        `Pinned ${chosen.length} file${chosen.length === 1 ? '' : 's'} to Study Matrix!`
+      );
+      window.setTimeout(() => setMatrixPinnedMsg(null), 3500);
+      setSelectedIds(new Set());
+    } catch {
+      setDriveError('Could not import files to Study Matrix.');
     }
+  };
+
+  const handleRenameSubmit = async (fileId: string) => {
+    if (!driveToken) return;
+    const trimmed = renameValue.trim();
+    if (!trimmed) {
+      setRenamingId(null);
+      return;
+    }
+    try {
+      const updated = await renameDriveFile(driveToken, fileId, trimmed);
+      setDriveFiles((prev) => prev.map((f) => (f.id === fileId ? updated : f)));
+      setOpenTabs((prev) => prev.map((t) => (t.id === fileId ? updated : t)));
+    } catch (err) {
+      setDriveError(err instanceof Error ? err.message : 'Could not rename file.');
+    } finally {
+      setRenamingId(null);
+    }
+  };
+
+  const openFileAsTab = (file: DriveFileItem) => {
+    setOpenTabs((prev) => (prev.some((t) => t.id === file.id) ? prev : [...prev, file]));
+    setActiveTabId(file.id);
+    setTabsMinimized(false);
+  };
+
+  const closeTab = (fileId: string) => {
+    setOpenTabs((prev) => {
+      const next = prev.filter((t) => t.id !== fileId);
+      if (activeTabId === fileId) {
+        setActiveTabId(next[next.length - 1]?.id ?? null);
+      }
+      return next;
+    });
   };
 
   const filteredFiles = useMemo(() => {
     return driveFiles.filter((file) => {
-      const meta = jsonMetaMap[file.id];
-      const category = classifyDriveFile(file, meta);
+      const category = classifyDriveFile(file);
       if (kindFilter !== 'All' && category !== kindFilter) return false;
       if (search.trim()) {
-        const q = search.toLowerCase();
-        const nameMatch = (meta?.title || file.name).toLowerCase().includes(q);
-        const contentMatch = meta?.content?.toLowerCase().includes(q) ?? false;
-        const tagMatch = meta?.tags?.some((t) => t.toLowerCase().includes(q)) ?? false;
-        return nameMatch || contentMatch || tagMatch;
+        return file.name.toLowerCase().includes(search.trim().toLowerCase());
       }
       return true;
     });
-  }, [driveFiles, jsonMetaMap, kindFilter, search]);
+  }, [driveFiles, kindFilter, search]);
+
+  const activeTabFile = openTabs.find((t) => t.id === activeTabId) ?? null;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-[#1C1C1E] flex items-center gap-2">
             <Library className="w-5 h-5 text-[#5B3A70]" />
-            Resource Library
+            My Files
           </h1>
           <p className="text-xs text-[#8E8E93] mt-0.5">
-            All PDFs, images, Docs, Sheets &amp; links saved directly in your &ldquo;Iqra Desk&rdquo; Google Drive
+            Upload PDFs, images, Word &amp; Excel in bulk — open multiple files as tabs inside Iqra Desk
           </p>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            onChange={(e) => void handleDriveUpload(e.target.files)}
+            className="hidden"
+          />
+
           {!driveToken ? (
             <button
               type="button"
@@ -274,17 +339,24 @@ export const ResourcesView: React.FC = () => {
 
           <button
             type="button"
+            disabled={!!uploadProgress}
             onClick={() => {
               if (!driveToken) {
                 void handleConnectDrive();
               } else {
-                setShowAddForm((v) => !v);
+                fileInputRef.current?.click();
               }
             }}
-            className="ios-press inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-[#5B3A70] hover:bg-[#6D4785] text-white rounded-xl shadow-xs whitespace-nowrap"
+            className="ios-press inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold bg-[#5B3A70] hover:bg-[#6D4785] text-white rounded-xl shadow-xs whitespace-nowrap disabled:opacity-60"
           >
-            <Plus className="w-3.5 h-3.5" />
-            Add Resource
+            {uploadProgress ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Plus className="w-3.5 h-3.5" />
+            )}
+            {uploadProgress
+              ? `Uploading ${uploadProgress.done}/${uploadProgress.total}...`
+              : 'Add Resource'}
           </button>
         </div>
       </div>
@@ -315,128 +387,11 @@ export const ResourcesView: React.FC = () => {
         </div>
       )}
 
-      {/* Unified Add Resource Panel (Upload Files OR Save Link/Snippet to Drive) */}
-      {showAddForm && driveToken && (
-        <form
-          onSubmit={(e) => void handleAddLinkResource(e)}
-          className="paper-card rounded-2xl p-5 space-y-4 border border-[#E2E0D8]"
-        >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div className="text-sm font-bold text-[#1C1C1E]">Add Resource to Google Drive</div>
-            <label className="inline-flex items-center gap-2 text-[11px] text-[#52525B] cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={convertEditable}
-                onChange={(e) => setConvertEditable(e.target.checked)}
-                className="rounded accent-[#0A5386]"
-              />
-              Auto-convert uploaded Word/Excel to editable Docs/Sheets
-            </label>
-          </div>
-
-          {/* File Upload Dropzone */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            onChange={(e) => {
-              void handleDriveUpload(e.target.files).then(() => setShowAddForm(false));
-            }}
-            className="hidden"
-          />
-          <button
-            type="button"
-            disabled={driveUploading || !driveFolderId}
-            onClick={() => fileInputRef.current?.click()}
-            className="w-full py-4 px-4 rounded-xl border-2 border-dashed border-[#0A5386]/35 bg-[#0A5386]/[0.03] hover:bg-[#0A5386]/[0.07] transition-colors flex items-center justify-center gap-2 text-xs font-semibold text-[#0A5386] disabled:opacity-60"
-          >
-            {driveUploading ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Upload className="w-4 h-4" />
-            )}
-            {driveUploading
-              ? 'Uploading to Iqra Desk Drive...'
-              : 'Click to Upload PDF, Image, Word (.docx), or Excel (.xlsx)'}
-          </button>
-
-          <div className="flex items-center gap-3 text-[10px] font-semibold text-[#8E8E93] uppercase tracking-wider">
-            <span className="flex-1 h-px bg-[#E2E0D8]" />
-            <span>or save a link / snippet</span>
-            <span className="flex-1 h-px bg-[#E2E0D8]" />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <select
-              value={noteKind}
-              onChange={(e) => setNoteKind(e.target.value as 'Bookmark' | 'Video' | 'Snippet')}
-              className="px-3 py-2 text-xs rounded-xl border border-[#E2E0D8] bg-white/60"
-            >
-              <option value="Bookmark">Bookmark / Link</option>
-              <option value="Video">Lecture Video</option>
-              <option value="Snippet">Code / Formula Snippet</option>
-            </select>
-            <input
-              type="text"
-              required
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Title *"
-              className="px-3 py-2 text-xs rounded-xl border border-[#E2E0D8] bg-white/60"
-            />
-            <input
-              type="text"
-              value={tagsRaw}
-              onChange={(e) => setTagsRaw(e.target.value)}
-              placeholder="Tags (comma-separated)"
-              className="px-3 py-2 text-xs rounded-xl border border-[#E2E0D8] bg-white/60"
-            />
-          </div>
-
-          <input
-            type="url"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="URL (website, YouTube lecture, etc.)"
-            className="w-full px-3 py-2 text-xs rounded-xl border border-[#E2E0D8] bg-white/60"
-          />
-
-          <textarea
-            rows={noteKind === 'Snippet' ? 4 : 2}
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder={
-              noteKind === 'Snippet'
-                ? 'Paste code snippet or formula...'
-                : 'Short summary or notes...'
-            }
-            className="w-full px-3 py-2 text-xs rounded-xl border border-[#E2E0D8] bg-white/60 font-mono"
-          />
-
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setShowAddForm(false)}
-              className="px-3 py-1.5 text-xs font-semibold text-[#6E6E73]"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={driveUploading}
-              className="ios-press px-4 py-1.5 text-xs font-semibold bg-[#5B3A70] text-white rounded-xl disabled:opacity-60"
-            >
-              {driveUploading ? 'Saving to Drive...' : 'Save to Drive'}
-            </button>
-          </div>
-        </form>
-      )}
-
-      {/* Filters */}
+      {/* Filters + Auto-convert toggle */}
       {driveToken && (
-        <div className="flex flex-col sm:flex-row gap-3 justify-between">
+        <div className="flex flex-col lg:flex-row lg:items-center gap-3 justify-between">
           <div className="flex flex-wrap items-center gap-1.5">
-            {(['All', 'Doc', 'Sheet', 'PDF', 'Image', 'Link'] as const).map((k) => (
+            {(['All', 'PDF', 'Doc', 'Sheet', 'Image'] as const).map((k) => (
               <button
                 key={k}
                 type="button"
@@ -450,22 +405,129 @@ export const ResourcesView: React.FC = () => {
                 {k}
               </button>
             ))}
+
+            <label className="ml-2 inline-flex items-center gap-1.5 text-[11px] text-[#6E6E73] cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={convertEditable}
+                onChange={(e) => setConvertEditable(e.target.checked)}
+                className="rounded accent-[#5B3A70]"
+              />
+              Auto-convert Word/Excel to Docs/Sheets
+            </label>
           </div>
 
-          <div className="relative w-full sm:w-64">
-            <Search className="w-3.5 h-3.5 text-[#71717A] absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search Drive resources..."
-              className="w-full pl-8 pr-3 py-1.5 text-xs bg-white/70 border border-[#E2E0D8] rounded-xl"
-            />
+          <div className="flex items-center gap-2 w-full lg:w-auto">
+            <div className="relative flex-1 lg:w-64">
+              <Search className="w-3.5 h-3.5 text-[#71717A] absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search Drive files..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-white/70 border border-[#E2E0D8] rounded-xl"
+              />
+            </div>
+
+            <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-black/5 border border-[#E2E0D8] shrink-0">
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                title="Grid View with Previews"
+                className={`p-1.5 rounded-lg transition-colors ${
+                  viewMode === 'grid'
+                    ? 'bg-[#5B3A70] text-white shadow-2xs'
+                    : 'text-[#6E6E73] hover:text-[#1C1C1E]'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                title="List View"
+                className={`p-1.5 rounded-lg transition-colors ${
+                  viewMode === 'list'
+                    ? 'bg-[#5B3A70] text-white shadow-2xs'
+                    : 'text-[#6E6E73] hover:text-[#1C1C1E]'
+                }`}
+              >
+                <List className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Unified Drive Resources Grid */}
+      {matrixPinnedMsg && (
+        <div className="text-xs font-semibold text-emerald-700 bg-emerald-500/12 border border-emerald-500/25 rounded-xl px-3.5 py-2.5">
+          {matrixPinnedMsg}
+        </div>
+      )}
+
+      {/* Bulk Selection Action Bar (appears automatically when hovering & selecting files) */}
+      {driveToken && selectedIds.size > 0 && (
+        <div className="paper-card rounded-2xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 border border-[#0A5386]/30 bg-[#0A5386]/[0.04] animate-workspace-enter">
+          <div className="flex items-center gap-3 text-xs font-semibold text-[#1C1C1E]">
+            <span>{selectedIds.size} selected</span>
+            <button
+              type="button"
+              onClick={() => {
+                const allSelected =
+                  filteredFiles.length > 0 && filteredFiles.every((f) => selectedIds.has(f.id));
+                if (allSelected) {
+                  setSelectedIds(new Set());
+                } else {
+                  setSelectedIds(new Set(filteredFiles.map((f) => f.id)));
+                }
+              }}
+              className="text-[#0A5386] hover:underline"
+            >
+              {filteredFiles.length > 0 && filteredFiles.every((f) => selectedIds.has(f.id))
+                ? 'Deselect All'
+                : 'Select All'}
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={handleBulkOpenTabs}
+              className="ios-press inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#5B3A70] hover:bg-[#6D4785] text-white text-xs font-semibold"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Open Tabs ({selectedIds.size})
+            </button>
+            <button
+              type="button"
+              onClick={handleBulkImportToMatrix}
+              className="ios-press inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0A5386] hover:bg-[#08446E] text-white text-xs font-semibold"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Import to Matrix
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setConfirmDeleteFiles(driveFiles.filter((f) => selectedIds.has(f.id)))
+              }
+              className="ios-press inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete ({selectedIds.size})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              title="Clear selection"
+              className="p-1.5 rounded-xl text-[#6E6E73] hover:text-[#1C1C1E] hover:bg-black/5"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Unified Drive Files Grid */}
       {!driveToken ? (
         <div className="paper-card rounded-2xl p-10 text-center space-y-3">
           <Cloud className="w-8 h-8 text-[#0A5386] mx-auto" />
@@ -473,7 +535,7 @@ export const ResourcesView: React.FC = () => {
             Connect your Google Drive to access your Resource Library
           </div>
           <p className="text-xs text-[#8E8E93] max-w-md mx-auto">
-            Everything you upload or save here is stored directly in your &ldquo;Iqra Desk&rdquo; Google Drive folder.
+            Click <strong>Add Resource</strong> to bulk-upload PDFs, images, Word &amp; Excel files directly to your &ldquo;Iqra Desk&rdquo; folder.
           </p>
           <button
             type="button"
@@ -487,127 +549,92 @@ export const ResourcesView: React.FC = () => {
       ) : driveLoading && driveFiles.length === 0 ? (
         <div className="paper-card rounded-2xl p-10 text-center text-xs text-[#8E8E93] flex items-center justify-center gap-2">
           <Loader2 className="w-4 h-4 animate-spin" />
-          Loading resources from your &ldquo;Iqra Desk&rdquo; Google Drive...
+          Loading files from your &ldquo;Iqra Desk&rdquo; Google Drive...
         </div>
       ) : filteredFiles.length === 0 ? (
         <div className="paper-card rounded-2xl p-10 text-center text-xs text-[#8E8E93]">
-          Your &ldquo;Iqra Desk&rdquo; folder has no matching resources yet. Upload PDFs, images, Word/Excel files, or click <strong>Add Resource</strong>!
+          No files here yet. Click <strong>+ Add Resource</strong> to upload one or multiple files at once!
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      ) : viewMode === 'list' ? (
+        <div className="paper-card rounded-2xl divide-y divide-[#E2E0D8]/60 overflow-hidden">
           {filteredFiles.map((file) => {
-            const meta = jsonMetaMap[file.id];
-            if (meta) {
-              return (
-                <div
-                  key={file.id}
-                  className="paper-card rounded-2xl p-4 space-y-2.5 flex flex-col justify-between group"
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        {meta.kind === 'Video' ? (
-                          <Video className="w-4 h-4 text-[#0A5386] shrink-0" />
-                        ) : meta.kind === 'Snippet' ? (
-                          <Code2 className="w-4 h-4 text-[#1B5E5A] shrink-0" />
-                        ) : (
-                          <Bookmark className="w-4 h-4 text-[#5B3A70] shrink-0" />
-                        )}
-                        <span className="text-xs font-bold text-[#1C1C1E] truncate">
-                          {meta.title}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void handleTrashDriveFile(file.id)}
-                        title="Move to Drive Trash"
-                        className="text-[#8E8E93] opacity-0 group-hover:opacity-100 hover:text-red-600 shrink-0 transition-opacity"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    {meta.content && (
-                      <pre
-                        className={`text-[11px] whitespace-pre-wrap break-words rounded-xl p-2.5 bg-black/5 ${
-                          meta.kind === 'Snippet' ? 'font-mono text-[#1C1C1E]' : 'text-[#52525B]'
-                        }`}
-                      >
-                        {meta.content}
-                      </pre>
-                    )}
-
-                    {meta.tags && meta.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {meta.tags.map((t) => (
-                          <span
-                            key={t}
-                            className="text-[10px] px-2 py-0.5 rounded-full bg-black/5 text-[#52525B]"
-                          >
-                            #{t}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-[#E2E0D8]/60 text-[11px]">
-                    <span className="text-[#8E8E93]">{meta.kind} · Drive</span>
-                    {meta.url && (
-                      <a
-                        href={meta.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[#0A5386] font-semibold hover:underline inline-flex items-center gap-1 shrink-0"
-                      >
-                        Open <ExternalLink className="w-3 h-3" />
-                      </a>
-                    )}
-                  </div>
-                </div>
-              );
-            }
-
             const isSheet =
               file.mimeType.includes('spreadsheet') || file.mimeType.includes('csv');
             const isImg = file.mimeType.startsWith('image/');
             const editable = isEditableGoogleFile(file.mimeType);
+            const isRenaming = renamingId === file.id;
             const sizeKb = file.size ? Math.max(1, Math.round(Number(file.size) / 1024)) : null;
 
             return (
               <div
                 key={file.id}
-                className="paper-card rounded-2xl p-4 space-y-2.5 flex flex-col justify-between group"
+                className="px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-black/[0.02] group"
               >
-                <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
                   <button
                     type="button"
-                    onClick={() => setActiveDriveFile(file)}
-                    className="flex items-center gap-2 min-w-0 text-left flex-1"
+                    onClick={() => toggleSelectFile(file.id)}
+                    title={selectedIds.has(file.id) ? 'Deselect' : 'Select'}
+                    className={`w-4 h-4 rounded flex items-center justify-center border shrink-0 transition-opacity ${
+                      selectedIds.has(file.id)
+                        ? 'opacity-100 bg-[#0A5386] border-[#0A5386] text-white'
+                        : selectedIds.size > 0
+                        ? 'opacity-100 border-[#A1A1AA] bg-white'
+                        : 'opacity-0 group-hover:opacity-100 border-[#A1A1AA] bg-white'
+                    }`}
                   >
-                    {isSheet ? (
-                      <FileSpreadsheet className="w-4 h-4 text-[#1B5E5A] shrink-0" />
-                    ) : isImg ? (
-                      <ImageIcon className="w-4 h-4 text-[#9B5B76] shrink-0" />
-                    ) : (
-                      <FileText className="w-4 h-4 text-[#0A5386] shrink-0" />
-                    )}
-                    <span className="text-xs font-bold text-[#1C1C1E] truncate hover:underline">
+                    {selectedIds.has(file.id) && <Check className="w-3 h-3" />}
+                  </button>
+                  {isSheet ? (
+                    <FileSpreadsheet className="w-4 h-4 text-[#1B5E5A] shrink-0" />
+                  ) : isImg ? (
+                    <ImageIcon className="w-4 h-4 text-[#9B5B76] shrink-0" />
+                  ) : (
+                    <FileText className="w-4 h-4 text-[#0A5386] shrink-0" />
+                  )}
+
+                  {isRenaming ? (
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void handleRenameSubmit(file.id);
+                      }}
+                      className="flex items-center gap-1.5 flex-1 min-w-0"
+                    >
+                      <input
+                        type="text"
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') setRenamingId(null);
+                        }}
+                        className="flex-1 min-w-0 px-2 py-1 text-xs font-semibold rounded-lg border border-[#0A5386] bg-white focus:outline-none"
+                      />
+                      <button type="submit" className="p-1 rounded-lg bg-[#0A5386] text-white">
+                        <Check className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRenamingId(null)}
+                        className="p-1 rounded-lg bg-black/5 text-[#52525B]"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </form>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => openFileAsTab(file)}
+                      className="text-xs font-bold text-[#1C1C1E] truncate hover:underline text-left"
+                    >
                       {file.name}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleTrashDriveFile(file.id)}
-                    title="Move to Drive Trash"
-                    className="text-[#8E8E93] opacity-0 group-hover:opacity-100 hover:text-red-600 transition-opacity shrink-0"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                    </button>
+                  )}
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-[#E2E0D8]/60 text-[11px]">
-                  <span className="text-[#8E8E93]">
+                <div className="flex items-center gap-3 shrink-0 text-[11px]">
+                  <span className="hidden sm:inline text-[#8E8E93]">
                     {editable
                       ? isSheet
                         ? 'Google Sheet'
@@ -618,25 +645,222 @@ export const ResourcesView: React.FC = () => {
                         : `${sizeKb} KB`
                       : 'Drive File'}
                   </span>
-                  <div className="flex items-center gap-2.5">
-                    <button
-                      type="button"
-                      onClick={() => setActiveDriveFile(file)}
-                      className="text-[#0A5386] font-bold hover:underline"
+                  <button
+                    type="button"
+                    onClick={() => openFileAsTab(file)}
+                    className="text-[#0A5386] font-bold hover:underline"
+                  >
+                    {editable ? 'Open & Edit' : 'Open Tab'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRenamingId(file.id);
+                      setRenameValue(file.name);
+                    }}
+                    title="Rename file"
+                    className="p-1 rounded-md text-[#8E8E93] hover:text-[#0A5386]"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  {file.webViewLink && (
+                    <a
+                      href={file.webViewLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="Open in Google Drive"
+                      className="text-[#6E6E73] hover:text-[#1C1C1E]"
                     >
-                      {editable ? 'Open & Edit' : 'View'}
-                    </button>
-                    {file.webViewLink && (
-                      <a
-                        href={file.webViewLink}
-                        target="_blank"
-                        rel="noreferrer"
-                        title="Open in Google Drive"
-                        className="text-[#6E6E73] hover:text-[#1C1C1E]"
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDeleteFiles([file])}
+                    title="Move to Drive Trash"
+                    className="p-1 rounded-md text-[#8E8E93] hover:text-red-600"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredFiles.map((file) => {
+            const isSheet =
+              file.mimeType.includes('spreadsheet') || file.mimeType.includes('csv');
+            const isImg = file.mimeType.startsWith('image/');
+            const editable = isEditableGoogleFile(file.mimeType);
+            const isRenaming = renamingId === file.id;
+            const sizeKb = file.size ? Math.max(1, Math.round(Number(file.size) / 1024)) : null;
+            const thumbSrc =
+              !brokenThumbs.has(file.id)
+                ? file.thumbnailLink || `https://drive.google.com/thumbnail?id=${file.id}&sz=w600`
+                : null;
+
+            return (
+              <div
+                key={file.id}
+                className="paper-card rounded-2xl overflow-hidden flex flex-col justify-between group"
+              >
+                {/* Visual Preview Thumbnail with Hover-to-Select Checkbox */}
+                <div className="relative w-full h-36 bg-black/[0.04] border-b border-[#E2E0D8]/60 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleSelectFile(file.id);
+                    }}
+                    title={selectedIds.has(file.id) ? 'Deselect' : 'Select'}
+                    className={`absolute top-2.5 left-2.5 z-10 w-5 h-5 rounded-md flex items-center justify-center border shadow-sm transition-opacity ${
+                      selectedIds.has(file.id)
+                        ? 'opacity-100 bg-[#0A5386] border-[#0A5386] text-white'
+                        : selectedIds.size > 0
+                        ? 'opacity-100 bg-white/95 border-[#A1A1AA]'
+                        : 'opacity-0 group-hover:opacity-100 bg-white/95 border-[#A1A1AA]'
+                    }`}
+                  >
+                    {selectedIds.has(file.id) && <Check className="w-3.5 h-3.5" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openFileAsTab(file)}
+                    className="w-full h-full flex items-center justify-center"
+                  >
+                  {thumbSrc ? (
+                    <img
+                      src={thumbSrc}
+                      alt={file.name}
+                      referrerPolicy="no-referrer"
+                      onError={() =>
+                        setBrokenThumbs((prev) => new Set(prev).add(file.id))
+                      }
+                      className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-200"
+                    />
+                  ) : isSheet ? (
+                    <FileSpreadsheet className="w-10 h-10 text-[#1B5E5A]/60" />
+                  ) : isImg ? (
+                    <ImageIcon className="w-10 h-10 text-[#9B5B76]/60" />
+                  ) : (
+                    <FileText className="w-10 h-10 text-[#0A5386]/60" />
+                  )}
+                  </button>
+                </div>
+
+                <div className="p-3.5 space-y-2.5 flex-1 flex flex-col justify-between">
+                  <div className="flex items-start justify-between gap-2">
+                    {isRenaming ? (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          void handleRenameSubmit(file.id);
+                        }}
+                        className="flex items-center gap-1.5 flex-1 min-w-0"
                       >
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
+                        <input
+                          type="text"
+                          autoFocus
+                          value={renameValue}
+                          onChange={(e) => setRenameValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') setRenamingId(null);
+                          }}
+                          className="flex-1 min-w-0 px-2 py-1 text-xs font-semibold rounded-lg border border-[#0A5386] bg-white focus:outline-none"
+                        />
+                        <button
+                          type="submit"
+                          title="Save name"
+                          className="p-1 rounded-lg bg-[#0A5386] text-white"
+                        >
+                          <Check className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRenamingId(null)}
+                          title="Cancel"
+                          className="p-1 rounded-lg bg-black/5 text-[#52525B]"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </form>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openFileAsTab(file)}
+                          className="flex items-center gap-2 min-w-0 text-left flex-1"
+                        >
+                          {isSheet ? (
+                            <FileSpreadsheet className="w-4 h-4 text-[#1B5E5A] shrink-0" />
+                          ) : isImg ? (
+                            <ImageIcon className="w-4 h-4 text-[#9B5B76] shrink-0" />
+                          ) : (
+                            <FileText className="w-4 h-4 text-[#0A5386] shrink-0" />
+                          )}
+                          <span className="text-xs font-bold text-[#1C1C1E] truncate hover:underline">
+                            {file.name}
+                          </span>
+                        </button>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRenamingId(file.id);
+                              setRenameValue(file.name);
+                            }}
+                            title="Rename file"
+                            className="p-1 rounded-md text-[#8E8E93] hover:text-[#0A5386]"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteFiles([file])}
+                            title="Move to Drive Trash"
+                            className="p-1 rounded-md text-[#8E8E93] hover:text-red-600"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </>
                     )}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2 border-t border-[#E2E0D8]/60 text-[11px]">
+                    <span className="text-[#8E8E93]">
+                      {editable
+                        ? isSheet
+                          ? 'Google Sheet'
+                          : 'Google Doc'
+                        : sizeKb
+                        ? sizeKb > 1024
+                          ? `${(sizeKb / 1024).toFixed(1)} MB`
+                          : `${sizeKb} KB`
+                        : 'Drive File'}
+                    </span>
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => openFileAsTab(file)}
+                        className="text-[#0A5386] font-bold hover:underline"
+                      >
+                        {editable ? 'Open & Edit' : 'Open Tab'}
+                      </button>
+                      {file.webViewLink && (
+                        <a
+                          href={file.webViewLink}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Open in Google Drive"
+                          className="text-[#6E6E73] hover:text-[#1C1C1E]"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -645,48 +869,185 @@ export const ResourcesView: React.FC = () => {
         </div>
       )}
 
-      {/* In-App Drive Viewer & Live Docs/Sheets Editor Modal */}
-      {activeDriveFile && (
-        <div className="fixed inset-0 z-50 bg-black/55 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
-          <div className="w-full max-w-6xl h-[88vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-[#E2E0D8]">
-            <div className="px-4 py-3 border-b border-[#E2E0D8] flex items-center justify-between gap-3 bg-[#FAF9F6]">
-              <div className="min-w-0">
-                <div className="text-sm font-bold text-[#1C1C1E] truncate">
-                  {activeDriveFile.name}
-                </div>
-                <div className="text-[11px] text-[#8E8E93]">
-                  {isEditableGoogleFile(activeDriveFile.mimeType)
-                    ? 'Live editing inside Iqra Desk — changes auto-save to Google Drive'
-                    : 'Previewing from Google Drive'}
-                </div>
+      {/* Minimized Multi-Tab Dock Pill */}
+      {openTabs.length > 0 && tabsMinimized && (
+        <button
+          type="button"
+          onClick={() => setTabsMinimized(false)}
+          className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 ios-press px-4 py-2 rounded-full bg-[#1C1C1E] text-white text-xs font-semibold shadow-2xl flex items-center gap-2"
+        >
+          <FileText className="w-3.5 h-3.5 text-[#0A84FF]" />
+          <span>
+            {openTabs.length} {openTabs.length === 1 ? 'File' : 'Files'} Open — Click to Resume
+          </span>
+        </button>
+      )}
+
+      {/* Multi-Tab In-App Viewer & Live Editor Modal */}
+      {openTabs.length > 0 && !tabsMinimized && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-5">
+          <div
+            style={{ backgroundColor: '#ffffff', color: '#18181b' }}
+            className="w-full max-w-6xl h-[90vh] rounded-2xl shadow-2xl overflow-hidden flex flex-col border border-zinc-300"
+          >
+            {/* Browser-style Tabs Bar */}
+            <div
+              style={{ backgroundColor: '#f4f2ed', borderColor: '#e2e0d8' }}
+              className="px-3 pt-2.5 pb-0 border-b flex items-center justify-between gap-2"
+            >
+              <div className="flex items-center gap-1 overflow-x-auto flex-1 min-w-0">
+                {openTabs.map((tab) => {
+                  const active = tab.id === activeTabId;
+                  return (
+                    <div
+                      key={tab.id}
+                      style={
+                        active
+                          ? { backgroundColor: '#ffffff', color: '#18181b', borderColor: '#e2e0d8' }
+                          : { color: '#52525b' }
+                      }
+                      className={`group flex items-center gap-1.5 px-3 py-2 rounded-t-xl text-xs font-semibold max-w-[200px] shrink-0 cursor-pointer transition-colors ${
+                        active ? 'border-t border-x' : 'hover:bg-black/5'
+                      }`}
+                      onClick={() => setActiveTabId(tab.id)}
+                    >
+                      <span className="truncate">{tab.name}</span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          closeTab(tab.id);
+                        }}
+                        title="Close tab"
+                        style={{ color: '#52525b' }}
+                        className="p-0.5 rounded-md hover:bg-black/10"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                {activeDriveFile.webViewLink && (
+
+              <div className="flex items-center gap-1.5 pb-2 shrink-0">
+                {activeTabFile?.webViewLink && (
                   <a
-                    href={activeDriveFile.webViewLink}
+                    href={activeTabFile.webViewLink}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl border border-[#E2E0D8] bg-white text-xs font-semibold text-[#1C1C1E] hover:bg-black/5"
+                    title="Open in New Browser Tab"
+                    style={{ backgroundColor: '#ffffff', color: '#18181b', borderColor: '#d4d4d8' }}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-semibold hover:opacity-90"
                   >
                     New Tab <ExternalLink className="w-3 h-3" />
                   </a>
                 )}
                 <button
                   type="button"
-                  onClick={() => setActiveDriveFile(null)}
-                  className="p-1.5 rounded-xl bg-black/5 hover:bg-black/10 text-[#1C1C1E]"
-                  title="Close"
+                  onClick={() => setTabsMinimized(true)}
+                  title="Minimize tabs"
+                  style={{ backgroundColor: '#e4e4e7', color: '#18181b' }}
+                  className="p-1.5 rounded-lg hover:opacity-80"
                 >
-                  <X className="w-4 h-4" />
+                  <Minimize2 className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenTabs([]);
+                    setActiveTabId(null);
+                  }}
+                  title="Close all tabs"
+                  style={{ backgroundColor: '#e4e4e7', color: '#18181b' }}
+                  className="p-1.5 rounded-lg hover:bg-red-500/20 hover:text-red-600"
+                >
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
-            <iframe
-              src={getDriveEmbedUrl(activeDriveFile)}
-              title={activeDriveFile.name}
-              className="w-full flex-1 border-0 bg-white"
-              allow="autoplay; clipboard-read; clipboard-write"
-            />
+
+            {/* Keep all open tab iframes mounted so switching PDFs/Docs is instant */}
+            <div className="relative flex-1 bg-white">
+              {openTabs.map((tab) => (
+                <iframe
+                  key={tab.id}
+                  src={getDriveEmbedUrl(tab)}
+                  title={tab.name}
+                  className={`w-full h-full border-0 bg-white ${
+                    tab.id === activeTabId ? 'block' : 'hidden'
+                  }`}
+                  allow="autoplay; clipboard-write; clipboard-read"
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {confirmDeleteFiles && confirmDeleteFiles.length > 0 && (
+        <div
+          onClick={() => !isDeleting && setConfirmDeleteFiles(null)}
+          className="fixed inset-0 z-50 bg-black/55 backdrop-blur-xs flex items-center justify-center p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="paper-card w-full max-w-sm rounded-2xl p-5 shadow-2xl border border-[#E2E0D8] space-y-4 animate-workspace-enter"
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-red-500/15 text-red-600 flex items-center justify-center shrink-0">
+                <Trash2 className="w-4.5 h-4.5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-[#1C1C1E]">
+                  {confirmDeleteFiles.length === 1
+                    ? 'Delete this file?'
+                    : `Delete ${confirmDeleteFiles.length} selected files?`}
+                </h3>
+                <p className="text-xs text-[#8E8E93] mt-1">
+                  They will be moved to your Google Drive Trash.
+                </p>
+              </div>
+            </div>
+
+            <div className="max-h-28 overflow-y-auto rounded-xl bg-black/5 p-2.5 space-y-1 text-xs text-[#1C1C1E]">
+              {confirmDeleteFiles.slice(0, 4).map((f) => (
+                <div key={f.id} className="truncate font-medium">
+                  • {f.name}
+                </div>
+              ))}
+              {confirmDeleteFiles.length > 4 && (
+                <div className="text-[11px] text-[#8E8E93]">
+                  ...and {confirmDeleteFiles.length - 4} more
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setConfirmDeleteFiles(null)}
+                className="px-3.5 py-1.5 rounded-xl border border-[#E2E0D8] text-xs font-semibold text-[#52525B]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => void executeConfirmedDelete()}
+                className="ios-press inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold disabled:opacity-60"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  'Move to Trash'
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
