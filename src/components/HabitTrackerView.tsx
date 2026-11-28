@@ -1,726 +1,486 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { ColorRingPicker } from './ColorRingPicker';
-import { ConfirmModal } from './ConfirmModal';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Ban,
-  Check,
-  CheckCircle2,
-  Flame,
-  Gauge,
-  Minus,
+  ChevronLeft,
+  ChevronRight,
+  Pencil,
   Plus,
-  RotateCcw,
   Trash2,
   X,
 } from 'lucide-react';
 import {
-  calcDayCompletionPct,
-  calcHabitStreak,
-  calcOverallDailyStreak,
-  isHabitDoneOnDate,
   loadHabits,
   saveHabits,
   toIsoDate,
   type HabitItem,
-  type HabitKind,
 } from '../lib/habits';
+import { ColorRingPicker } from './ColorRingPicker';
+import { ConfirmModal } from './ConfirmModal';
 
-function getLast364Days(todayIso: string): string[] {
-  const days: string[] = [];
-  const base = new Date(`${todayIso}T00:00:00`);
-  for (let i = 363; i >= 0; i--) {
-    const d = new Date(base);
-    d.setDate(base.getDate() - i);
-    days.push(toIsoDate(d));
+const WEEKDAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+const TASK_CHECKERS = [
+  '/task-checkers/checker-1.png',
+  '/task-checkers/checker-2.png',
+  '/task-checkers/checker-3.png',
+  '/task-checkers/checker-4.png',
+  '/task-checkers/checker-5.png',
+  '/task-checkers/checker-6.png',
+];
+
+interface MonthDay {
+  iso: string;
+  dayNum: number;
+  weekdayLetter: string;
+  isToday: boolean;
+  isFuture: boolean;
+}
+
+function getMonthDays(year: number, monthIndex: number, todayIso: string): MonthDay[] {
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const list: MonthDay[] = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateObj = new Date(year, monthIndex, d);
+    const iso = toIsoDate(dateObj);
+    list.push({
+      iso,
+      dayNum: d,
+      weekdayLetter: WEEKDAY_LETTERS[dateObj.getDay()],
+      isToday: iso === todayIso,
+      isFuture: iso > todayIso,
+    });
   }
-  return days;
+  return list;
 }
 
 export const HabitTrackerView: React.FC = () => {
   const todayIso = useMemo(() => toIsoDate(new Date()), []);
-  const [habits, setHabits] = useState<HabitItem[]>(() => loadHabits());
-  const [habitToDelete, setHabitToDelete] = useState<{ id: string; name: string } | null>(null);
+  const todayDate = useMemo(() => new Date(`${todayIso}T00:00:00`), [todayIso]);
 
-  const [showAdd, setShowAdd] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newKind, setNewKind] = useState<HabitKind>('regular');
-  const [newColor, setNewColor] = useState('#133F47');
-  const [newTarget, setNewTarget] = useState(2);
-  const [newUnit, setNewUnit] = useState('L');
+  const [habits, setHabits] = useState<HabitItem[]>(() => loadHabits());
+  const [viewYear, setViewYear] = useState(() => todayDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(() => todayDate.getMonth());
+  const [halfMonth, setHalfMonth] = useState<0 | 1>(() =>
+    todayDate.getDate() <= 15 ? 0 : 1
+  );
+
+  // Add / Edit Habit Modal
+  const [habitModal, setHabitModal] = useState<{
+    mode: 'create' | 'edit';
+    habitId?: string;
+    name: string;
+    color: string;
+  } | null>(null);
+
+  const [habitToDelete, setHabitToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [showAllDonePopup, setShowAllDonePopup] = useState(false);
+  const todayColRef = useRef<HTMLTableCellElement | null>(null);
 
   useEffect(() => {
     saveHabits(habits);
   }, [habits]);
 
-  const yearDays = useMemo(() => getLast364Days(todayIso), [todayIso]);
-  const last7Days = useMemo(() => yearDays.slice(-7), [yearDays]);
-  const yearWeeks = useMemo(() => {
-    const weeks: string[][] = [];
-    for (let i = 0; i < yearDays.length; i += 7) {
-      weeks.push(yearDays.slice(i, i + 7));
+  const monthDays = useMemo(() => {
+    const all = getMonthDays(viewYear, viewMonth, todayIso);
+    return halfMonth === 0 ? all.slice(0, 15) : all.slice(15);
+  }, [viewYear, viewMonth, halfMonth, todayIso]);
+
+  const monthLabel = useMemo(() => {
+    const d = new Date(viewYear, viewMonth, 1);
+    const shortMonth = d.toLocaleDateString('en-US', { month: 'short' });
+    const start = monthDays[0]?.dayNum ?? 1;
+    const end = monthDays[monthDays.length - 1]?.dayNum ?? 15;
+    return `${shortMonth} ${start} - ${end}, ${viewYear}`;
+  }, [viewYear, viewMonth, monthDays]);
+
+  // Auto-scroll horizontal table to today's column on smaller screens
+  useEffect(() => {
+    if (todayColRef.current) {
+      todayColRef.current.scrollIntoView({
+        behavior: 'smooth',
+        inline: 'center',
+        block: 'nearest',
+      });
     }
-    return weeks;
-  }, [yearDays]);
+  }, [viewYear, viewMonth, halfMonth]);
 
-  const todayPct = useMemo(() => calcDayCompletionPct(habits, todayIso), [habits, todayIso]);
-  const overallStreak = useMemo(() => calcOverallDailyStreak(habits, todayIso), [habits, todayIso]);
+  const goPrevMonth = () => {
+    if (halfMonth === 1) {
+      setHalfMonth(0);
+    } else if (viewMonth === 0) {
+      setViewYear((y) => y - 1);
+      setViewMonth(11);
+      setHalfMonth(1);
+    } else {
+      setViewMonth((m) => m - 1);
+      setHalfMonth(1);
+    }
+  };
 
-  const handleAddHabit = (e: React.FormEvent) => {
+  const goNextMonth = () => {
+    if (halfMonth === 0) {
+      setHalfMonth(1);
+    } else if (viewMonth === 11) {
+      setViewYear((y) => y + 1);
+      setViewMonth(0);
+      setHalfMonth(0);
+    } else {
+      setViewMonth((m) => m + 1);
+      setHalfMonth(0);
+    }
+  };
+
+  const toggleHabitDay = (habitId: string, iso: string, isFuture: boolean) => {
+    if (isFuture) return;
+    const wasAllDone =
+      habits.length > 0 && habits.every((h) => h.completedDates.includes(iso));
+
+    const nextHabits = habits.map((h) => {
+      if (h.id !== habitId) return h;
+      const done = h.completedDates.includes(iso);
+      return {
+        ...h,
+        completedDates: done
+          ? h.completedDates.filter((d) => d !== iso)
+          : [...h.completedDates, iso],
+      };
+    });
+
+    const isNowAllDone =
+      nextHabits.length > 0 &&
+      nextHabits.every((h) => h.completedDates.includes(iso));
+
+    setHabits(nextHabits);
+
+    if (!wasAllDone && isNowAllDone) {
+      setShowAllDonePopup(true);
+    }
+  };
+
+  const handleSaveHabit = (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmed = newName.trim();
+    if (!habitModal) return;
+    const trimmed = habitModal.name.trim();
     if (!trimmed) return;
-    const item: HabitItem = {
-      id: `hab_${Date.now().toString(36)}`,
-      name: trimmed,
-      kind: newKind,
-      color: newColor,
-      completedDates: [],
-      target: newKind === 'measurable' ? Math.max(1, newTarget) : undefined,
-      unit: newKind === 'measurable' ? newUnit.trim() || 'units' : undefined,
-      progressByDate: newKind === 'measurable' ? {} : undefined,
-      quitStartDate: newKind === 'quitting' ? todayIso : undefined,
-      relapsedDates: newKind === 'quitting' ? [] : undefined,
-      createdAt: Date.now(),
-    };
-    setHabits((prev) => [item, ...prev]);
-    setNewName('');
-    setShowAdd(false);
+
+    if (habitModal.mode === 'create') {
+      const item: HabitItem = {
+        id: `hab_${Date.now().toString(36)}`,
+        name: trimmed,
+        kind: 'regular',
+        color: habitModal.color,
+        completedDates: [],
+        createdAt: Date.now(),
+      };
+      setHabits((prev) => [...prev, item]);
+    } else if (habitModal.habitId) {
+      setHabits((prev) =>
+        prev.map((h) =>
+          h.id === habitModal.habitId
+            ? { ...h, name: trimmed, color: habitModal.color }
+            : h
+        )
+      );
+    }
+    setHabitModal(null);
   };
 
-  const toggleRegular = (id: string) => {
-    setHabits((prev) =>
-      prev.map((h) => {
-        if (h.id !== id) return h;
-        const has = h.completedDates.includes(todayIso);
-        return {
-          ...h,
-          completedDates: has
-            ? h.completedDates.filter((d) => d !== todayIso)
-            : [...h.completedDates, todayIso],
-        };
-      })
-    );
-  };
-
-  const adjustMeasurable = (id: string, delta: number) => {
-    setHabits((prev) =>
-      prev.map((h) => {
-        if (h.id !== id) return h;
-        const curr = h.progressByDate?.[todayIso] ?? 0;
-        const nextVal = Math.max(0, Math.round((curr + delta) * 10) / 10);
-        return {
-          ...h,
-          progressByDate: { ...(h.progressByDate ?? {}), [todayIso]: nextVal },
-        };
-      })
-    );
-  };
-
-  const toggleQuittingRelapse = (id: string) => {
-    setHabits((prev) =>
-      prev.map((h) => {
-        if (h.id !== id) return h;
-        const relapsed = h.relapsedDates ?? [];
-        const has = relapsed.includes(todayIso);
-        return {
-          ...h,
-          relapsedDates: has
-            ? relapsed.filter((d) => d !== todayIso)
-            : [...relapsed, todayIso],
-        };
-      })
-    );
-  };
-
-  const deleteHabit = (id: string) => {
-    setHabits((prev) => prev.filter((h) => h.id !== id));
+  const executeDeleteHabit = () => {
+    if (!habitToDelete) return;
+    setHabits((prev) => prev.filter((h) => h.id !== habitToDelete.id));
+    setHabitToDelete(null);
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-[#1C1C1E] dark:text-white flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5 text-[#133F47] dark:text-[#2DD4BF]" />
-            Habit Tracker
-          </h1>
-          <p className="text-xs text-[#8E8E93] dark:text-zinc-400 mt-0.5">
-            Track regular, measurable &amp; quitting habits and yearly consistency
-          </p>
-        </div>
+    <div className="space-y-4">
+      <div className="paper-card rounded-2xl border border-[#E2E0D8] dark:border-white/10 p-4 sm:p-6 space-y-5">
+        {/* Top Bar: Month Switcher + New Habit */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex items-center gap-1 rounded-lg border border-[#E2E0D8] dark:border-white/12 bg-black/[0.03] dark:bg-white/[0.04] px-1.5 py-1">
+            <button
+              type="button"
+              onClick={goPrevMonth}
+              aria-label="Previous month"
+              className="p-1.5 rounded-md text-[#52525B] dark:text-zinc-300 hover:bg-black/5 dark:hover:bg-white/10 hover:text-[#1C1C1E] dark:hover:text-white transition-colors"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <span className="min-w-[136px] text-center text-xs sm:text-sm font-bold text-[#1C1C1E] dark:text-white select-none">
+              {monthLabel}
+            </span>
+            <button
+              type="button"
+              onClick={goNextMonth}
+              aria-label="Next month"
+              className="p-1.5 rounded-md text-[#52525B] dark:text-zinc-300 hover:bg-black/5 dark:hover:bg-white/10 hover:text-[#1C1C1E] dark:hover:text-white transition-colors"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="px-3 py-1.5 rounded-xl paper-card text-xs font-bold text-[#133F47] dark:text-[#2DD4BF] inline-flex items-center gap-1.5">
-            <span className="font-mono-num">{todayPct}%</span>
-            <span>done today</span>
-          </div>
-          <div className="px-3 py-1.5 rounded-xl paper-card text-xs font-bold text-amber-600 dark:text-amber-400 inline-flex items-center gap-1.5">
-            <Flame className="w-3.5 h-3.5" />
-            <span className="font-mono-num">{overallStreak}d</span>
-            <span>streak</span>
-          </div>
           <button
             type="button"
-            onClick={() => setShowAdd((v) => !v)}
-            className="ios-press inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-[#133F47] hover:bg-[#0E2F35] dark:bg-[#2DD4BF] dark:hover:bg-[#5EEAD4] text-white dark:text-[#0C1A1C] text-xs font-semibold shadow-xs"
+            onClick={() =>
+              setHabitModal({ mode: 'create', name: '', color: '#0A5386' })
+            }
+            className="ios-press inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#133F47] hover:bg-[#0E2F35] dark:bg-[#2DD4BF] dark:hover:bg-[#5EEAD4] text-white dark:text-[#0C1A1C] text-xs font-semibold shadow-xs transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             New Habit
           </button>
         </div>
+
+        {/* Monthly Checkbox Grid */}
+        {habits.length === 0 ? (
+          <div className="py-12 text-center space-y-2.5 border border-dashed border-[#D6D3CB] dark:border-white/15 rounded-xl">
+            <p className="text-xs text-[#8E8E93] dark:text-zinc-400">
+              No habits added yet. Add a habit to start tracking this month.
+            </p>
+            <button
+              type="button"
+              onClick={() =>
+                setHabitModal({ mode: 'create', name: '', color: '#0A5386' })
+              }
+              className="ios-press inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#133F47] dark:bg-[#2DD4BF] text-white dark:text-[#0C1A1C] text-xs font-semibold"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              New Habit
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto overflow-y-hidden py-3">
+            <table className="w-full border-separate border-spacing-0 min-w-[740px]">
+              <thead>
+                <tr>
+                  <th
+                    rowSpan={2}
+                    className="sticky left-0 z-20 text-left align-bottom pb-2.5 pr-3 pl-1 text-[10px] font-bold uppercase tracking-wider text-[#8E8E93] dark:text-zinc-400 w-36 min-w-[144px] bg-inherit"
+                  >
+                    Habits
+                  </th>
+                  {monthDays.map((day) => (
+                    <th
+                      key={`wd-${day.iso}`}
+                      className={`pb-0.5 pt-1.5 text-center text-[11px] font-semibold select-none ${
+                        day.isToday
+                          ? 'bg-[#133F47]/[0.07] dark:bg-[#2DD4BF]/[0.09] text-[#133F47] dark:text-[#2DD4BF] rounded-t-lg'
+                          : 'text-[#8E8E93] dark:text-zinc-500'
+                      }`}
+                    >
+                      {day.weekdayLetter}
+                    </th>
+                  ))}
+                </tr>
+                <tr>
+                  {monthDays.map((day) => (
+                    <th
+                      key={`num-${day.iso}`}
+                      ref={day.isToday ? todayColRef : undefined}
+                      className={`pb-3 pt-0.5 text-center select-none ${
+                        day.isToday
+                          ? 'bg-[#133F47]/[0.07] dark:bg-[#2DD4BF]/[0.09]'
+                          : ''
+                      }`}
+                    >
+                      <span
+                        className={`inline-flex items-center justify-center w-7 h-7 text-xs font-mono-num font-bold rounded-md ${
+                          day.isToday
+                            ? 'bg-[#133F47] text-white dark:bg-[#2DD4BF] dark:text-[#0C1A1C] shadow-xs'
+                            : 'text-[#3F3F46] dark:text-zinc-300'
+                        }`}
+                      >
+                        {day.dayNum}
+                      </span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+
+              <tbody>
+                {habits.map((h, rowIdx) => {
+                  const isLastRow = rowIdx === habits.length - 1;
+                  const checkerImg = TASK_CHECKERS[rowIdx % TASK_CHECKERS.length];
+                  return (
+                    <tr key={h.id} className="group/row">
+                      {/* Habit Name Cell */}
+                      <td className="sticky left-0 z-10 pr-3 pl-1 py-1.5 bg-inherit">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setHabitModal({
+                                mode: 'edit',
+                                habitId: h.id,
+                                name: h.name,
+                                color: h.color,
+                              })
+                            }
+                            title="Click to edit habit"
+                            className="text-left text-xs sm:text-[13px] font-semibold text-[#1C1C1E] dark:text-zinc-100 truncate max-w-[130px] hover:underline decoration-dashed underline-offset-4"
+                          >
+                            {h.name}
+                          </button>
+
+                          <div className="flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setHabitModal({
+                                  mode: 'edit',
+                                  habitId: h.id,
+                                  name: h.name,
+                                  color: h.color,
+                                })
+                              }
+                              aria-label={`Edit ${h.name}`}
+                              title="Edit habit"
+                              className="p-1 rounded text-[#8E8E93] hover:text-[#1C1C1E] dark:hover:text-white"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setHabitToDelete({ id: h.id, name: h.name })
+                              }
+                              aria-label={`Delete ${h.name}`}
+                              title="Delete habit"
+                              className="p-1 rounded text-[#8E8E93] hover:text-red-600"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* 15-Day Checkboxes */}
+                      {monthDays.map((day) => {
+                        const checked = h.completedDates.includes(day.iso);
+                        const allDoneOnDay =
+                          habits.length > 0 &&
+                          habits.every((habit) => habit.completedDates.includes(day.iso));
+                        return (
+                          <td
+                            key={day.iso}
+                            className={`relative py-2 px-0.5 text-center ${
+                              day.isToday
+                                ? `bg-[#133F47]/[0.07] dark:bg-[#2DD4BF]/[0.09] ${
+                                    isLastRow ? 'rounded-b-lg' : ''
+                                  }`
+                                : ''
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              disabled={day.isFuture}
+                              onClick={() =>
+                                toggleHabitDay(h.id, day.iso, day.isFuture)
+                              }
+                              aria-label={`${h.name} on ${day.iso}`}
+                              title={`${h.name} (${day.iso})`}
+                              className={`group/sticker mx-auto w-14 h-14 rounded-lg flex items-center justify-center outline-none focus:outline-none transition-all ${
+                                day.isFuture ? 'cursor-not-allowed' : 'cursor-pointer'
+                              }`}
+                            >
+                              <img
+                                src={checkerImg}
+                                alt={checked ? 'Completed' : 'Not completed'}
+                                draggable={false}
+                                className={`w-14 h-14 object-contain select-none transition-all duration-300 ${
+                                  checked
+                                    ? `${
+                                        allDoneOnDay ? 'sticker-gold' : 'sticker-regular'
+                                      } opacity-100 contrast-[1.03] group-hover/sticker:-translate-y-1 group-hover/sticker:scale-110`
+                                    : day.isToday
+                                    ? 'grayscale contrast-125 opacity-40 dark:invert dark:opacity-35 group-hover/sticker:-translate-y-0.5 group-hover/sticker:scale-105'
+                                    : day.isFuture
+                                    ? 'grayscale opacity-12 dark:invert dark:opacity-10'
+                                    : 'grayscale opacity-22 dark:invert dark:opacity-18 group-hover/sticker:opacity-45 dark:group-hover/sticker:opacity-35 group-hover/sticker:-translate-y-0.5 group-hover/sticker:scale-105'
+                                }`}
+                              />
+                            </button>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
-      {/* Centered New Habit Popup Modal */}
-      {showAdd && (
+      {/* Add / Edit Habit Modal */}
+      {habitModal && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-workspace-enter"
-          onClick={() => setShowAdd(false)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') setShowAdd(false);
-          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs"
+          onClick={() => setHabitModal(null)}
         >
           <form
-            onSubmit={handleAddHabit}
+            onSubmit={handleSaveHabit}
             onClick={(e) => e.stopPropagation()}
-            className="paper-card w-full max-w-md rounded-3xl p-6 space-y-5 border border-[#E2E0D8] shadow-2xl"
+            className="paper-card w-full max-w-sm rounded-2xl p-6 space-y-5 border border-[#E2E0D8] dark:border-white/15 shadow-2xl"
           >
             <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-base font-bold text-[#1C1C1E]">Create New Habit</h2>
-                <p className="text-xs text-[#8E8E93] mt-0.5">
-                  Choose a name, colour, and tracking type
-                </p>
-              </div>
+              <h2 className="text-base font-bold text-[#1C1C1E] dark:text-white">
+                {habitModal.mode === 'create' ? 'New Habit' : 'Edit Habit'}
+              </h2>
               <button
                 type="button"
-                onClick={() => setShowAdd(false)}
-                className="p-1.5 rounded-full text-[#8E8E93] hover:text-[#1C1C1E] hover:bg-black/5 transition-colors"
+                onClick={() => setHabitModal(null)}
+                className="p-1 rounded-md text-[#8E8E93] hover:text-[#1C1C1E] dark:hover:text-white"
                 aria-label="Close"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* 1. Habit Name */}
             <div className="space-y-1.5">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8E8E93]">
                 Habit Name
               </label>
               <input
                 type="text"
-                required
                 autoFocus
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder={
-                  newKind === 'measurable'
-                    ? 'e.g. Drink Water, Walk, Study Pages'
-                    : newKind === 'quitting'
-                    ? 'e.g. No Junk Food, No Late Scrolling'
-                    : 'e.g. Morning Revision, Skincare'
+                required
+                value={habitModal.name}
+                onChange={(e) =>
+                  setHabitModal({ ...habitModal, name: e.target.value })
                 }
-                className="w-full px-3.5 py-2.5 text-sm font-semibold rounded-xl border border-[#E2E0D8] bg-white/75 focus:outline-none focus:border-[#133F47]"
+                placeholder="e.g. Read 20 pages, Exercise"
+                className="w-full px-3.5 py-2 text-xs font-semibold rounded-lg border border-[#E2E0D8] dark:border-white/15 bg-white/80 dark:bg-white/10 focus:outline-none focus:border-[#133F47]"
               />
             </div>
 
-            {/* 2. Habit Type */}
-            <div className="space-y-1.5">
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8E8E93]">
-                Type
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {(
-                  [
-                    { id: 'regular', label: 'Regular', icon: CheckCircle2 },
-                    { id: 'measurable', label: 'Measurable', icon: Gauge },
-                    { id: 'quitting', label: 'Quitting', icon: Ban },
-                  ] as const
-                ).map((k) => {
-                  const Icon = k.icon;
-                  const active = newKind === k.id;
-                  return (
-                    <button
-                      key={k.id}
-                      type="button"
-                      onClick={() => setNewKind(k.id)}
-                      className={`ios-press flex flex-col items-center justify-center gap-1.5 px-2.5 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
-                        active
-                          ? 'bg-[#133F47] text-white border-[#133F47] shadow-sm'
-                          : 'border-[#E2E0D8] bg-white/60 text-[#52525B] hover:text-[#1C1C1E]'
-                      }`}
-                    >
-                      <Icon className="w-4 h-4" />
-                      <span>{k.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {newKind === 'measurable' && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8E8E93]">
-                    Daily Target
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    step="any"
-                    value={newTarget}
-                    onChange={(e) => setNewTarget(Number(e.target.value) || 1)}
-                    className="w-full px-3 py-2 text-xs font-mono-num font-semibold rounded-xl border border-[#E2E0D8] bg-white/75 focus:outline-none focus:border-[#133F47]"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8E8E93]">
-                    Unit
-                  </label>
-                  <input
-                    type="text"
-                    value={newUnit}
-                    onChange={(e) => setNewUnit(e.target.value)}
-                    placeholder="L, min, pgs"
-                    className="w-full px-3 py-2 text-xs font-semibold rounded-xl border border-[#E2E0D8] bg-white/75 focus:outline-none focus:border-[#133F47]"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* 3. Colour */}
             <div className="space-y-2">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8E8E93]">
                 Colour
               </label>
-              <ColorRingPicker value={newColor} onChange={setNewColor} size={136} />
+              <ColorRingPicker
+                value={habitModal.color}
+                onChange={(color) => setHabitModal({ ...habitModal, color })}
+              />
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E0D8]/70">
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#E2E0D8]/70 dark:border-white/10">
               <button
                 type="button"
-                onClick={() => setShowAdd(false)}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-[#52525B] hover:bg-black/5 transition-colors"
+                onClick={() => setHabitModal(null)}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-[#52525B] dark:text-zinc-300 hover:bg-black/5 dark:hover:bg-white/10"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="ios-press px-5 py-2 rounded-xl text-white text-xs font-semibold shadow-sm"
-                style={{ backgroundColor: newColor }}
+                className="ios-press px-4 py-2 rounded-lg text-white text-xs font-semibold shadow-xs"
+                style={{ backgroundColor: habitModal.color }}
               >
-                Add Habit
+                {habitModal.mode === 'create' ? 'Add Habit' : 'Save Changes'}
               </button>
             </div>
           </form>
         </div>
       )}
-
-      {/* Habit Sections */}
-      <div className="space-y-5">
-        {/* Today's Overall Progress Bar */}
-        <div className="paper-card rounded-2xl p-4 space-y-2">
-          <div className="flex items-center justify-between text-xs font-bold text-[#1C1C1E] dark:text-white">
-            <span>Today&apos;s Completion</span>
-            <span className="font-mono-num text-[#133F47] dark:text-[#2DD4BF]">{todayPct}%</span>
-          </div>
-          <div className="h-2.5 rounded-full bg-black/8 dark:bg-white/10 overflow-hidden">
-            <div
-              className="h-full bg-[#133F47] dark:bg-[#2DD4BF] rounded-full transition-all duration-300 shadow-2xs"
-              style={{ width: `${todayPct}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Unified Habits List */}
-        <div className="paper-card rounded-2xl p-5 space-y-3">
-          <div className="text-xs font-bold uppercase tracking-wider text-[#8E8E93] dark:text-zinc-400 flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5 text-[#133F47] dark:text-[#2DD4BF]" />
-            My Habits
-          </div>
-
-          {habits.length === 0 ? (
-            <div className="py-8 text-center space-y-2 border border-dashed border-[#D6D3CB] dark:border-white/15 rounded-2xl">
-              <p className="text-xs text-[#8E8E93] dark:text-zinc-400">No habits added yet.</p>
-              <button
-                type="button"
-                onClick={() => setShowAdd(true)}
-                className="ios-press inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#133F47] dark:bg-[#2DD4BF] text-white dark:text-[#0C1A1C] text-xs font-semibold"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                New Habit
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {habits.map((h) => {
-                const streak = calcHabitStreak(h, todayIso);
-                const kindLabel =
-                  h.kind === 'regular'
-                    ? 'Regular'
-                    : h.kind === 'measurable'
-                    ? 'Measurable'
-                    : 'Quitting';
-
-                const renderWeekDots = () => (
-                  <div className="flex items-center gap-1.5">
-                    {last7Days.map((iso) => {
-                      const dayDone = isHabitDoneOnDate(h, iso);
-                      const isToday = iso === todayIso;
-                      return (
-                        <span
-                          key={iso}
-                          title={`${iso}: ${dayDone ? 'Done' : 'Missed'}`}
-                          className={`h-2 flex-1 rounded-full transition-all duration-300 ${
-                            isToday ? 'ring-1 ring-offset-1 ring-black/15 dark:ring-white/25 dark:ring-offset-transparent' : ''
-                          }`}
-                          style={{
-                            backgroundColor: dayDone ? h.color : 'rgba(142, 142, 147, 0.22)',
-                          }}
-                        />
-                      );
-                    })}
-                  </div>
-                );
-
-                if (h.kind === 'regular') {
-                  const done = isHabitDoneOnDate(h, todayIso);
-                  return (
-                    <div
-                      key={h.id}
-                      className="relative overflow-hidden aspect-square p-4 rounded-[26px] border flex flex-col justify-between gap-2 group hover:-translate-y-0.5 hover:shadow-md transition-all duration-200"
-                      style={{
-                        borderColor: done ? `${h.color}70` : `${h.color}2A`,
-                        background: done
-                          ? `linear-gradient(145deg, ${h.color}2B 0%, ${h.color}0E 55%, rgba(255,255,255,0.03) 100%)`
-                          : `linear-gradient(145deg, ${h.color}12 0%, rgba(255,255,255,0.02) 70%)`,
-                      }}
-                    >
-                      <div
-                        className="pointer-events-none absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl transition-opacity duration-300"
-                        style={{
-                          backgroundColor: h.color,
-                          opacity: done ? 0.32 : 0.12,
-                        }}
-                      />
-
-                      <div className="relative z-10 flex items-start justify-between gap-1.5">
-                        <span
-                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider"
-                          style={{
-                            backgroundColor: `${h.color}20`,
-                            color: h.color,
-                          }}
-                        >
-                          <span
-                            className="w-1.5 h-1.5 rounded-full shrink-0"
-                            style={{ backgroundColor: h.color }}
-                          />
-                          {kindLabel}
-                        </span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span className="px-2 py-0.5 rounded-full bg-amber-500/18 text-amber-700 dark:text-amber-300 text-[10px] font-bold font-mono-num inline-flex items-center gap-0.5">
-                            <Flame className="w-3 h-3" />
-                            {streak}d
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setHabitToDelete({ id: h.id, name: h.name })}
-                            className="p-1 text-[#8E8E93] hover:text-red-500 transition-colors"
-                            aria-label={`Delete ${h.name}`}
-                            title="Delete habit"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="relative z-10 space-y-2.5 my-auto">
-                        <div className="text-base font-extrabold text-[#1C1C1E] dark:text-white line-clamp-2 leading-snug">
-                          {h.name}
-                        </div>
-                        {renderWeekDots()}
-                      </div>
-
-                      <div className="relative z-10 flex items-center justify-between gap-2 pt-1">
-                        <span
-                          className="text-[11px] font-bold"
-                          style={{ color: done ? h.color : undefined }}
-                        >
-                          <span className={done ? '' : 'text-[#8E8E93] dark:text-zinc-400'}>
-                            {done ? 'Done today' : 'Tap to complete'}
-                          </span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => toggleRegular(h.id)}
-                          aria-label={done ? `Unmark ${h.name}` : `Mark ${h.name} done`}
-                          className={`ios-press w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all shrink-0 ${
-                            done
-                              ? 'text-white border-transparent'
-                              : 'bg-white/75 dark:bg-white/10 hover:scale-105'
-                          }`}
-                          style={
-                            done
-                              ? {
-                                  backgroundColor: h.color,
-                                  boxShadow: `0 6px 16px -3px ${h.color}88`,
-                                }
-                              : { borderColor: h.color, color: h.color }
-                          }
-                        >
-                          <Check className="w-4 h-4 stroke-[2.75]" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                }
-
-                if (h.kind === 'measurable') {
-                  const curr = h.progressByDate?.[todayIso] ?? 0;
-                  const target = h.target || 1;
-                  const pct = Math.min(100, Math.round((curr / target) * 100));
-                  const done = pct >= 100;
-                  return (
-                    <div
-                      key={h.id}
-                      className="relative overflow-hidden aspect-square p-4 rounded-[26px] border flex flex-col justify-between gap-2 group hover:-translate-y-0.5 hover:shadow-md transition-all duration-200"
-                      style={{
-                        borderColor: done ? `${h.color}70` : `${h.color}2A`,
-                        background: done
-                          ? `linear-gradient(145deg, ${h.color}2B 0%, ${h.color}0E 55%, rgba(255,255,255,0.03) 100%)`
-                          : `linear-gradient(145deg, ${h.color}14 0%, rgba(255,255,255,0.02) 70%)`,
-                      }}
-                    >
-                      <div
-                        className="pointer-events-none absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl transition-opacity duration-300"
-                        style={{
-                          backgroundColor: h.color,
-                          opacity: done ? 0.32 : 0.14,
-                        }}
-                      />
-
-                      <div className="relative z-10 flex items-start justify-between gap-1.5">
-                        <span
-                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider"
-                          style={{
-                            backgroundColor: `${h.color}20`,
-                            color: h.color,
-                          }}
-                        >
-                          <span
-                            className="w-1.5 h-1.5 rounded-full shrink-0"
-                            style={{ backgroundColor: h.color }}
-                          />
-                          {kindLabel}
-                        </span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span
-                            className="px-2 py-0.5 rounded-full text-[10px] font-bold font-mono-num"
-                            style={{
-                              backgroundColor: `${h.color}1F`,
-                              color: h.color,
-                            }}
-                          >
-                            {pct}%
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => setHabitToDelete({ id: h.id, name: h.name })}
-                            className="p-1 text-[#8E8E93] hover:text-red-500 transition-colors"
-                            aria-label={`Delete ${h.name}`}
-                            title="Delete habit"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="relative z-10 space-y-2 my-auto">
-                        <div className="text-base font-extrabold text-[#1C1C1E] dark:text-white line-clamp-2 leading-snug">
-                          {h.name}
-                        </div>
-                        <div className="flex items-center justify-between text-[11px] font-mono-num text-[#6E6E73] dark:text-zinc-300">
-                          <span>
-                            <strong className="text-[#1C1C1E] dark:text-white">{curr}</strong> / {target} {h.unit}
-                          </span>
-                        </div>
-                        <div className="h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all duration-300"
-                            style={{
-                              width: `${pct}%`,
-                              backgroundColor: h.color,
-                              boxShadow: pct > 0 ? `0 0 10px ${h.color}88` : undefined,
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="relative z-10 flex items-center justify-between gap-2 pt-1">
-                        <div className="flex-1 min-w-0 pr-1">{renderWeekDots()}</div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            onClick={() => adjustMeasurable(h.id, -1)}
-                            className="ios-press w-8 h-8 rounded-full border border-[#E2E0D8] dark:border-white/15 bg-white/80 dark:bg-white/10 flex items-center justify-center text-[#1C1C1E] dark:text-white shadow-2xs hover:scale-105 transition-transform"
-                            aria-label={`Decrease ${h.name}`}
-                          >
-                            <Minus className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => adjustMeasurable(h.id, 1)}
-                            className="ios-press w-8 h-8 rounded-full text-white flex items-center justify-center hover:scale-105 transition-transform"
-                            style={{
-                              backgroundColor: h.color,
-                              boxShadow: `0 5px 14px -3px ${h.color}88`,
-                            }}
-                            aria-label={`Increase ${h.name}`}
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }
-
-                const cleanToday = isHabitDoneOnDate(h, todayIso);
-                return (
-                  <div
-                    key={h.id}
-                    className="relative overflow-hidden aspect-square p-4 rounded-[26px] border flex flex-col justify-between gap-2 group hover:-translate-y-0.5 hover:shadow-md transition-all duration-200"
-                    style={{
-                      borderColor: cleanToday ? `${h.color}70` : 'rgba(239, 68, 68, 0.45)',
-                      background: cleanToday
-                        ? `linear-gradient(145deg, ${h.color}28 0%, ${h.color}0B 55%, rgba(255,255,255,0.03) 100%)`
-                        : 'linear-gradient(145deg, rgba(239, 68, 68, 0.16) 0%, rgba(255,255,255,0.02) 70%)',
-                    }}
-                  >
-                    <div
-                      className="pointer-events-none absolute -top-8 -right-8 w-24 h-24 rounded-full blur-2xl transition-opacity duration-300"
-                      style={{
-                        backgroundColor: cleanToday ? h.color : '#EF4444',
-                        opacity: 0.28,
-                      }}
-                    />
-
-                    <div className="relative z-10 flex items-start justify-between gap-1.5">
-                      <span
-                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider"
-                        style={{
-                          backgroundColor: `${h.color}20`,
-                          color: h.color,
-                        }}
-                      >
-                        <span
-                          className="w-1.5 h-1.5 rounded-full shrink-0"
-                          style={{ backgroundColor: h.color }}
-                        />
-                        {kindLabel}
-                      </span>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/18 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold font-mono-num">
-                          {streak}d clean
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setHabitToDelete({ id: h.id, name: h.name })}
-                          className="p-1 text-[#8E8E93] hover:text-red-500 transition-colors"
-                          aria-label={`Delete ${h.name}`}
-                          title="Delete habit"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="relative z-10 space-y-2.5 my-auto">
-                      <div className="text-base font-extrabold text-[#1C1C1E] dark:text-white line-clamp-2 leading-snug">
-                        {h.name}
-                      </div>
-                      {renderWeekDots()}
-                    </div>
-
-                    <div className="relative z-10 flex items-center justify-between gap-2 pt-1">
-                      <span
-                        className={`text-[11px] font-bold ${
-                          cleanToday ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'
-                        }`}
-                      >
-                        {cleanToday ? 'Clean today' : 'Slipped today'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => toggleQuittingRelapse(h.id)}
-                        aria-label={cleanToday ? `Log slip for ${h.name}` : `Reset slip for ${h.name}`}
-                        title={cleanToday ? 'Clean today (click if slipped)' : 'Reset slip'}
-                        className={`ios-press w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all shrink-0 ${
-                          cleanToday
-                            ? 'bg-emerald-600 border-emerald-600 text-white shadow-[0_6px_16px_-3px_rgba(16,185,129,0.55)]'
-                            : 'bg-red-500/15 border-red-500 text-red-500'
-                        }`}
-                      >
-                        {cleanToday ? (
-                          <Check className="w-4 h-4 stroke-[2.75]" />
-                        ) : (
-                          <RotateCcw className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Yearly Overview Heatmap (52 weeks x 7 days) */}
-      <div className="paper-card rounded-2xl p-5 space-y-3 overflow-x-auto">
-        <div className="flex items-center justify-between min-w-[640px]">
-          <div>
-            <h2 className="text-sm font-bold text-[#1C1C1E] dark:text-white">Yearly Overview</h2>
-            <p className="text-[11px] text-[#8E8E93] dark:text-zinc-400">
-              Daily habit completion percentage across the past 52 weeks
-            </p>
-          </div>
-          <div className="flex items-center gap-1.5 text-[10px] text-[#8E8E93] dark:text-zinc-400">
-            <span>0%</span>
-            <span className="w-3 h-3 rounded-xs bg-black/[0.06] dark:bg-white/[0.08]" />
-            <span className="w-3 h-3 rounded-xs bg-[#133F47]/30 dark:bg-[#2DD4BF]/30" />
-            <span className="w-3 h-3 rounded-xs bg-[#133F47]/65 dark:bg-[#2DD4BF]/65" />
-            <span className="w-3 h-3 rounded-xs bg-[#133F47] dark:bg-[#2DD4BF]" />
-            <span>100%</span>
-          </div>
-        </div>
-
-        <div className="flex gap-1 min-w-[640px]">
-          {yearWeeks.map((week, wIdx) => (
-            <div key={wIdx} className="flex flex-col gap-1 flex-1">
-              {week.map((iso) => {
-                const pct = calcDayCompletionPct(habits, iso);
-                const bg =
-                  pct === 0
-                    ? 'bg-black/[0.06] dark:bg-white/[0.08]'
-                    : pct < 40
-                    ? 'bg-[#133F47]/30 dark:bg-[#2DD4BF]/30'
-                    : pct < 80
-                    ? 'bg-[#133F47]/65 dark:bg-[#2DD4BF]/65'
-                    : 'bg-[#133F47] dark:bg-[#2DD4BF]';
-                return (
-                  <div
-                    key={iso}
-                    title={`${iso}: ${pct}% completed`}
-                    className={`w-full aspect-square rounded-[3px] ${bg} transition-colors`}
-                  />
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      </div>
 
       <ConfirmModal
         open={!!habitToDelete}
@@ -729,14 +489,81 @@ export const HabitTrackerView: React.FC = () => {
         confirmLabel="Delete"
         cancelLabel="Cancel"
         tone="danger"
-        onConfirm={() => {
-          if (habitToDelete) {
-            deleteHabit(habitToDelete.id);
-            setHabitToDelete(null);
-          }
-        }}
+        onConfirm={executeDeleteHabit}
         onCancel={() => setHabitToDelete(null)}
       />
+
+      {/* All Tasks Done Celebration Popup */}
+      {showAllDonePopup && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-xs"
+          onClick={() => setShowAllDonePopup(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="paper-card relative overflow-hidden w-full max-w-xs rounded-2xl p-5 text-center space-y-4 border border-[#E2E0D8] dark:border-white/15 shadow-2xl"
+          >
+            {/* Confetti rain behind image, caption, and button */}
+            <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden" aria-hidden="true">
+              {Array.from({ length: 76 }, (_, idx) => {
+                const colors = [
+                  '#F59E0B',
+                  '#EF4444',
+                  '#10B981',
+                  '#3B82F6',
+                  '#EC4899',
+                  '#8B5CF6',
+                  '#FBBF24',
+                  '#14B8A6',
+                  '#F97316',
+                ];
+                const left = `${((idx * 13 + 3) % 96) + 2}%`;
+                const w = 5 + (idx % 4);
+                const h = idx % 5 === 0 ? w : 8 + (idx % 6);
+                const color = colors[idx % colors.length];
+                const dur = `${(2.0 + (idx % 7) * 0.24).toFixed(2)}s`;
+                const delay = `-${((idx * 0.37) % 3.2).toFixed(2)}s`;
+                const drift = `${(idx % 2 === 0 ? 1 : -1) * (8 + (idx % 12))}px`;
+                return (
+                  <span
+                    key={idx}
+                    className="confetti-rain-piece"
+                    style={
+                      {
+                        left,
+                        width: `${w}px`,
+                        height: `${h}px`,
+                        borderRadius: idx % 5 === 0 ? '9999px' : '2px',
+                        backgroundColor: color,
+                        '--confetti-dur': dur,
+                        '--confetti-delay': delay,
+                        '--confetti-drift': drift,
+                      } as React.CSSProperties
+                    }
+                  />
+                );
+              })}
+            </div>
+
+            <img
+              src="/taskdone.jpg"
+              alt="All tasks done for the day"
+              draggable={false}
+              className="relative z-10 w-full aspect-square object-cover rounded-xl shadow-md"
+            />
+            <div className="relative z-10 text-base font-extrabold text-[#1C1C1E] dark:text-white">
+              All tasks done for the day !
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAllDonePopup(false)}
+              className="relative z-10 ios-press w-full py-2.5 rounded-xl bg-[#133F47] hover:bg-[#0E2F35] dark:bg-[#2DD4BF] dark:hover:bg-[#5EEAD4] text-white dark:text-[#0C1A1C] text-xs font-bold"
+            >
+              Awesome
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

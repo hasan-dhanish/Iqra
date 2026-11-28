@@ -4,7 +4,6 @@ import {
   BatteryCharging,
   BookOpen,
   CheckCircle2,
-  ClipboardList,
   Layers,
   LayoutDashboard,
   Library,
@@ -39,7 +38,6 @@ const NAV_ITEMS: {
 }[] = [
     { id: 'dashboard', label: 'My Dashboard', color: '#0A5386', icon: LayoutDashboard },
     { id: 'tracker', label: 'Habit Tracker', color: '#133F47', icon: CheckCircle2 },
-    { id: 'planner', label: 'Study Planner', color: '#0A5386', icon: ClipboardList },
     { id: 'matrix', label: 'Folder Shelf', color: '#254454', icon: Layers },
     { id: 'timer', label: 'Focus Timer', color: '#9B5B76', icon: Timer },
     { id: 'youtube', label: 'Youtube', color: '#A43850', icon: Tv },

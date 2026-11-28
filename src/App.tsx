@@ -9,7 +9,6 @@ import { ProjectPinboard } from './components/ProjectPinboard';
 import { ResourcesView } from './components/ResourcesView';
 import { Sidebar } from './components/Sidebar';
 import { StudyFoldersView, type StudyFolder } from './components/StudyFoldersView';
-import { StudyPlannerView } from './components/StudyPlannerView';
 import { TimerView, type StudySessionLog } from './components/TimerView';
 import { HabitTrackerView } from './components/HabitTrackerView';
 import { YoutubeView, type YoutubeActiveVideo } from './components/YoutubeView';
@@ -298,8 +297,6 @@ const WorkspaceShell: React.FC = () => {
           )}
 
           {activeTab === 'tracker' && <HabitTrackerView />}
-
-          {activeTab === 'planner' && <StudyPlannerView />}
 
           {activeTab === 'timer' && (
             <TimerView

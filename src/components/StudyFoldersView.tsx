@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   FolderPlus,
   Pencil,
@@ -6,6 +6,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { ColorRingPicker } from './ColorRingPicker';
 import { GlassFolderIcon } from './GlassFolderIcon';
 
 export interface StudyFolder {
@@ -62,6 +63,52 @@ export const StudyFoldersView: React.FC<StudyFoldersViewProps> = ({ onOpenFolder
   const [newColor, setNewColor] = useState(FOLDER_COLORS[0]);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
+  const [openingState, setOpeningState] = useState<{
+    folder: StudyFolder;
+    fromRect: { left: number; top: number; width: number; height: number };
+    stage: 'start' | 'center' | 'open' | 'zoom';
+  } | null>(null);
+  const openTimersRef = useRef<number[]>([]);
+
+  useEffect(() => {
+    return () => {
+      openTimersRef.current.forEach((id) => window.clearTimeout(id));
+    };
+  }, []);
+
+  const triggerOpenFolder = (folder: StudyFolder, el: HTMLElement) => {
+    if (openingState) return;
+    openTimersRef.current.forEach((id) => window.clearTimeout(id));
+
+    const r = el.getBoundingClientRect();
+    setOpeningState({
+      folder,
+      fromRect: { left: r.left, top: r.top, width: r.width, height: r.height },
+      stage: 'start',
+    });
+
+    // Double rAF guarantees the browser paints exact shelf position before gliding to center (matching Notebook)
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        setOpeningState((prev) => (prev ? { ...prev, stage: 'center' } : null));
+      });
+    });
+
+    const t1 = window.setTimeout(() => {
+      setOpeningState((prev) => (prev ? { ...prev, stage: 'open' } : null));
+    }, 280);
+
+    const t2 = window.setTimeout(() => {
+      setOpeningState((prev) => (prev ? { ...prev, stage: 'zoom' } : null));
+    }, 580);
+
+    const t3 = window.setTimeout(() => {
+      setOpeningState(null);
+      onOpenFolder(folder);
+    }, 860);
+
+    openTimersRef.current = [t1, t2, t3];
+  };
 
   useEffect(() => {
     try {
@@ -154,27 +201,12 @@ export const StudyFoldersView: React.FC<StudyFoldersViewProps> = ({ onOpenFolder
               className="flex-1 px-3.5 py-2 text-xs font-semibold rounded-xl border border-[#E2E0D8] bg-white/70 focus:outline-none focus:border-[#254454]"
             />
 
-            <div className="flex items-center gap-1.5">
-              {FOLDER_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setNewColor(c)}
-                  className={`w-6 h-6 rounded-full transition-transform ${
-                    newColor === c ? 'scale-115 ring-2 ring-offset-2 ring-[#1C1C1E]' : ''
-                  }`}
-                  style={{ backgroundColor: c }}
-                  title="Choose folder color"
-                />
-              ))}
-              <input
-                type="color"
-                value={newColor}
-                onChange={(e) => setNewColor(e.target.value)}
-                title="Custom color"
-                className="w-6 h-6 rounded-full border-0 bg-transparent cursor-pointer p-0"
-              />
-            </div>
+            <ColorRingPicker
+              value={newColor}
+              onChange={setNewColor}
+              colors={FOLDER_COLORS.slice(0, 5)}
+              compact
+            />
 
             <button
               type="submit"
@@ -197,10 +229,15 @@ export const StudyFoldersView: React.FC<StudyFoldersViewProps> = ({ onOpenFolder
               {rowFolders.map((folder) => {
                 const isRenaming = renamingId === folder.id;
                 return (
-                  <div key={folder.id} className="group relative">
+                  <div
+                    key={folder.id}
+                    className={`group relative transition-opacity duration-150 ${
+                      openingState?.folder.id === folder.id ? 'opacity-0' : 'opacity-100'
+                    }`}
+                  >
                     <button
                       type="button"
-                      onClick={() => !isRenaming && onOpenFolder(folder)}
+                      onClick={(e) => !isRenaming && triggerOpenFolder(folder, e.currentTarget)}
                       className="ios-press relative text-left focus:outline-none block"
                     >
                       <div className="absolute -bottom-1 inset-x-2 h-2.5 bg-black/40 blur-[4px] rounded-full transition-all duration-200 group-hover:scale-x-90 group-hover:opacity-60" />
@@ -268,6 +305,118 @@ export const StudyFoldersView: React.FC<StudyFoldersViewProps> = ({ onOpenFolder
           </div>
         ))}
       </div>
+
+      {/* 3D Folder: Glide from Shelf -> Center -> Open & Fan Papers -> Smooth Zoom (matching Notebook) */}
+      {openingState && (() => {
+        const { fromRect, stage, folder } = openingState;
+        const dx =
+          typeof window !== 'undefined'
+            ? window.innerWidth / 2 - (fromRect.left + fromRect.width / 2)
+            : 0;
+        const dy =
+          typeof window !== 'undefined'
+            ? window.innerHeight / 2 - (fromRect.top + fromRect.height / 2)
+            : 0;
+        const scale =
+          stage === 'start' ? 1 : stage === 'center' ? 1.65 : stage === 'open' ? 1.7 : 3.8;
+        const tx = stage === 'start' ? 0 : dx;
+        const ty = stage === 'start' ? 0 : dy;
+        const isOpen = stage === 'open' || stage === 'zoom';
+
+        return (
+          <div
+            className="fixed inset-0 z-50 pointer-events-none transition-all duration-300"
+            style={{
+              backgroundColor:
+                stage === 'start'
+                  ? 'rgba(0, 0, 0, 0)'
+                  : stage === 'zoom'
+                    ? 'rgba(0, 0, 0, 0.12)'
+                    : 'rgba(0, 0, 0, 0.38)',
+              backdropFilter: stage === 'start' ? 'none' : 'blur(6px)',
+            }}
+          >
+            <div
+              style={{
+                position: 'fixed',
+                left: fromRect.left,
+                top: fromRect.top,
+                width: fromRect.width,
+                height: fromRect.height,
+                perspective: '1600px',
+                transform: `translate3d(${tx}px, ${ty}px, 0) scale(${scale})`,
+                opacity: stage === 'zoom' ? 0 : 1,
+                transition:
+                  'transform 320ms cubic-bezier(0.22, 1, 0.36, 1), opacity 260ms ease-out',
+              }}
+            >
+              {/* Back Folder Shell */}
+              <div
+                className="absolute inset-x-1 top-1 bottom-2 rounded-2xl shadow-[0_18px_40px_rgba(0,0,0,0.38)]"
+                style={{
+                  background: `linear-gradient(135deg, ${folder.color} 0%, #141418 100%)`,
+                }}
+              />
+
+              {/* Paper Sheet 3 (Back-Right) */}
+              <div
+                className="absolute left-10 right-3 top-3 bottom-4 rounded-lg bg-slate-100 border border-slate-200 shadow-md p-2.5"
+                style={{
+                  transition: 'transform 340ms cubic-bezier(0.22, 1, 0.36, 1)',
+                  transform: isOpen ? 'translateY(-36px) rotate(6deg)' : 'translateY(0) rotate(3deg)',
+                }}
+              >
+                <div className="h-1.5 w-10 bg-slate-300 rounded mb-1.5" />
+                <div className="h-1 w-14 bg-slate-200 rounded" />
+              </div>
+
+              {/* Paper Sheet 2 (Middle) */}
+              <div
+                className="absolute left-6 right-5 top-2.5 bottom-4 rounded-lg bg-slate-50 border border-slate-200 shadow-md p-2.5"
+                style={{
+                  transition: 'transform 340ms cubic-bezier(0.22, 1, 0.36, 1)',
+                  transform: isOpen ? 'translateY(-46px) rotate(-2deg)' : 'translateY(0) rotate(1deg)',
+                }}
+              >
+                <div className="h-1.5 w-12 bg-slate-300 rounded mb-1.5" />
+                <div className="h-1 w-16 bg-slate-200 rounded" />
+              </div>
+
+              {/* Paper Sheet 1 (Hero Front Paper) */}
+              <div
+                className="absolute left-3.5 right-6 top-3 bottom-3.5 rounded-xl bg-white border border-slate-200 shadow-xl p-3 z-20"
+                style={{
+                  transition: 'transform 340ms cubic-bezier(0.22, 1, 0.36, 1)',
+                  transform: isOpen
+                    ? 'translateY(-54px) rotate(-3deg) scale(1.04)'
+                    : 'translateY(0) rotate(-4deg) scale(1)',
+                }}
+              >
+                <div className="space-y-1.5">
+                  <div className="h-2 w-14 bg-slate-300 rounded" />
+                  <div className="h-1 w-20 bg-slate-200 rounded" />
+                  <div className="h-1 w-12 bg-slate-200 rounded" />
+                  <div className="h-1 w-16 bg-slate-200 rounded" />
+                </div>
+              </div>
+
+              {/* Frosted Translucent Front Pocket (tilts forward in 3D) */}
+              <div
+                className="absolute inset-x-1 bottom-1.5 top-9 rounded-2xl border border-white/45 shadow-xl flex items-end justify-center pb-2.5 origin-bottom z-30"
+                style={{
+                  transition: 'transform 340ms cubic-bezier(0.22, 1, 0.36, 1)',
+                  background: `linear-gradient(155deg, ${folder.color}CC 0%, #0F172AE8 100%)`,
+                  transform: isOpen ? 'rotateX(-52deg) translateY(5px)' : 'rotateX(0deg)',
+                }}
+              >
+                <span className="text-xs font-bold text-white drop-shadow truncate px-2">
+                  {folder.name}
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

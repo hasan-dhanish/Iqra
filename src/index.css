@@ -722,6 +722,45 @@
   color: #ffffff !important;
 }
 
+/* Task sticker states: flat at rest, lift + solid shadow only on hover */
+.sticker-gold {
+  filter: sepia(1) saturate(2.8) hue-rotate(6deg) brightness(1.02) contrast(1.06);
+}
+
+.group\/sticker:hover .sticker-gold {
+  filter: sepia(1) saturate(2.8) hue-rotate(6deg) brightness(1.02) contrast(1.06)
+    drop-shadow(2px 4px 0.5px rgba(120, 53, 15, 0.45));
+}
+
+.group\/sticker:hover .sticker-regular {
+  filter: drop-shadow(2px 4px 0.5px rgba(0, 0, 0, 0.28));
+}
+
+@keyframes confetti-popup-rain {
+  0% {
+    transform: translate3d(0, -16px, 0) rotateX(0deg) rotateZ(0deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.95;
+  }
+  85% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate3d(var(--confetti-drift, 14px), 440px, 0) rotateX(360deg) rotateZ(260deg);
+    opacity: 0;
+  }
+}
+
+.confetti-rain-piece {
+  position: absolute;
+  top: -14px;
+  border-radius: 2px;
+  animation: confetti-popup-rain var(--confetti-dur, 2.8s) linear var(--confetti-delay, 0s) infinite;
+  will-change: transform, opacity;
+}
+
 .dark-theme *::-webkit-scrollbar-thumb {
   background: linear-gradient(180deg, rgba(125, 211, 252, 0.35), rgba(45, 212, 191, 0.42));
 }

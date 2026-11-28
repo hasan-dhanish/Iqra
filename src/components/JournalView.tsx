@@ -7,7 +7,6 @@ import {
   Bold,
   BookOpen,
   Calculator,
-  Check,
   CheckSquare,
   Highlighter,
   Italic,
@@ -29,6 +28,7 @@ import {
   getJournalPageSnippet as getPageSnippet,
 } from '../lib/pinboard';
 import { ConfirmModal } from './ConfirmModal';
+import { ColorRingPicker } from './ColorRingPicker';
 
 const BOOK_COLORS = ['#0A5386', '#254454', '#133F47', '#8B1E1E', '#1B5E5A', '#2F333C'];
 
@@ -695,40 +695,11 @@ export const JournalView: React.FC = () => {
                     <label className="block text-[11px] font-semibold uppercase tracking-wider text-[#52525B] mb-1.5">
                       Cover Color
                     </label>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {BOOK_COLORS.map((c) => (
-                        <button
-                          key={c}
-                          type="button"
-                          onClick={() => setNewBookColor(c)}
-                          style={{ backgroundColor: c }}
-                          className={`w-7 h-7 rounded-full flex items-center justify-center text-white transition-transform ${newBookColor === c ? 'scale-110 ring-2 ring-offset-2 ring-[#0A5386]' : 'opacity-80 hover:opacity-100'
-                            }`}
-                        >
-                          {newBookColor === c && <Check className="w-3.5 h-3.5" />}
-                        </button>
-                      ))}
-
-                      <label
-                        title="Custom Color Wheel"
-                        className={`relative w-7 h-7 rounded-full cursor-pointer transition-transform flex items-center justify-center ${!BOOK_COLORS.includes(newBookColor)
-                          ? 'scale-110 ring-2 ring-offset-2 ring-[#0A5386]'
-                          : 'hover:scale-105'
-                          }`}
-                        style={{
-                          background:
-                            'conic-gradient(from 0deg, #ef4444, #f59e0b, #eab308, #22c55e, #06b6d4, #3b82f6, #a855f7, #ef4444)',
-                        }}
-                      >
-                        <span className="w-2.5 h-2.5 rounded-full bg-white shadow-sm pointer-events-none" />
-                        <input
-                          type="color"
-                          value={newBookColor}
-                          onChange={(e) => setNewBookColor(e.target.value)}
-                          className="sr-only"
-                        />
-                      </label>
-                    </div>
+                    <ColorRingPicker
+                      value={newBookColor}
+                      onChange={setNewBookColor}
+                      colors={BOOK_COLORS.slice(0, 5)}
+                    />
                   </div>
 
                   <div>

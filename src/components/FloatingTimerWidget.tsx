@@ -33,6 +33,7 @@ const RESET_IMAGES = [
 ];
 
 const STILL_FOCUSSING_IMAGE = '/still-focussing.jpg';
+const FIVE_MINS_FOCUS_IMAGE = '/5mins-focu.jpg';
 
 const SHINCHAN_FRAMES = [
   '/shinchan-1.png',
@@ -55,6 +56,7 @@ export function preloadTimerAssets(): void {
     ...SHINCHAN_FRAMES,
     PAUSED_SHINCHAN_IMAGE,
     STILL_FOCUSSING_IMAGE,
+    FIVE_MINS_FOCUS_IMAGE,
     ...VICTORY_IMAGES,
     ...RESET_IMAGES,
   ];
@@ -227,12 +229,14 @@ export const FloatingTimerWidget: React.FC<FloatingTimerWidgetProps> = ({
 
   const [frame, setFrame] = useState(1);
   const [overlayMode, setOverlayMode] = useState<{
-    type: 'midpoint' | 'victory' | 'reset';
+    type: 'midpoint' | 'victory' | 'reset' | 'fiveMin';
     image: string;
   } | null>(null);
   const midpointShownRef = useRef(false);
   const victoryShownRef = useRef(false);
+  const lastFiveMinMilestoneRef = useRef<number | null>(null);
   const resetTimerRef = useRef<number | null>(null);
+  const fiveMinTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!running) return;
@@ -242,13 +246,41 @@ export const FloatingTimerWidget: React.FC<FloatingTimerWidgetProps> = ({
     return () => window.clearInterval(id);
   }, [running]);
 
-  // Reset session-level midpoint/victory flags when progress goes back near 0
+  // Reset session-level midpoint/victory/5-min flags when progress goes back near 0
   useEffect(() => {
     if (progressPct < 10) {
       midpointShownRef.current = false;
       victoryShownRef.current = false;
     }
+    if (progressPct < 1) {
+      lastFiveMinMilestoneRef.current = 0;
+    }
   }, [progressPct]);
+
+  // Every 5 minutes of active focus, briefly show the 5-min focus image
+  useEffect(() => {
+    if (progressPct <= 0.1 || progressPct >= 99) return;
+    const totalSeconds = seconds / (1 - progressPct / 100);
+    const elapsedSeconds = Math.max(0, totalSeconds - seconds);
+    const milestone = Math.floor(elapsedSeconds / 300);
+
+    if (lastFiveMinMilestoneRef.current === null) {
+      lastFiveMinMilestoneRef.current = milestone;
+      return;
+    }
+
+    if (running && milestone >= 1 && milestone > lastFiveMinMilestoneRef.current) {
+      lastFiveMinMilestoneRef.current = milestone;
+      if (fiveMinTimerRef.current !== null) {
+        window.clearTimeout(fiveMinTimerRef.current);
+      }
+      setOverlayMode({ type: 'fiveMin', image: FIVE_MINS_FOCUS_IMAGE });
+      fiveMinTimerRef.current = window.setTimeout(() => {
+        setOverlayMode((prev) => (prev?.type === 'fiveMin' ? null : prev));
+        fiveMinTimerRef.current = null;
+      }, 3500);
+    }
+  }, [running, seconds, progressPct]);
 
   // Midpoint check ("Are you still focussing" at 50%)
   useEffect(() => {
@@ -257,12 +289,13 @@ export const FloatingTimerWidget: React.FC<FloatingTimerWidgetProps> = ({
       progressPct >= 50 &&
       progressPct < 99 &&
       !midpointAcked &&
-      !midpointShownRef.current
+      !midpointShownRef.current &&
+      overlayMode?.type !== 'fiveMin'
     ) {
       midpointShownRef.current = true;
       setOverlayMode({ type: 'midpoint', image: STILL_FOCUSSING_IMAGE });
     }
-  }, [running, progressPct, midpointAcked]);
+  }, [running, progressPct, midpointAcked, overlayMode?.type]);
 
   // If acknowledged from the other view, clear any open midpoint overlay
   useEffect(() => {
@@ -283,6 +316,9 @@ export const FloatingTimerWidget: React.FC<FloatingTimerWidgetProps> = ({
     return () => {
       if (resetTimerRef.current !== null) {
         window.clearTimeout(resetTimerRef.current);
+      }
+      if (fiveMinTimerRef.current !== null) {
+        window.clearTimeout(fiveMinTimerRef.current);
       }
     };
   }, []);
@@ -530,9 +566,18 @@ export const FloatingTimerWidget: React.FC<FloatingTimerWidgetProps> = ({
         )}
       </div>
 
-      {/* Midpoint / Victory / Reset Image Overlays */}
+      {/* Midpoint / Victory / Reset / 5-Min Focus Image Overlays */}
       {overlayMode && (
-        <div className="absolute inset-0 z-40 rounded-[30px] overflow-hidden bg-black animate-workspace-enter">
+        <div
+          onClick={() => {
+            if (overlayMode.type === 'fiveMin') {
+              setOverlayMode(null);
+            }
+          }}
+          className={`absolute inset-0 z-40 rounded-[30px] overflow-hidden bg-black animate-workspace-enter ${
+            overlayMode.type === 'fiveMin' ? 'cursor-pointer' : ''
+          }`}
+        >
           <img
             src={overlayMode.image}
             alt={
@@ -540,6 +585,8 @@ export const FloatingTimerWidget: React.FC<FloatingTimerWidgetProps> = ({
                 ? 'Are you still focussing'
                 : overlayMode.type === 'victory'
                 ? 'Focus session complete'
+                : overlayMode.type === 'fiveMin'
+                ? '5 minutes of focus'
                 : 'Timer reset'
             }
             className="w-full h-full object-cover"
