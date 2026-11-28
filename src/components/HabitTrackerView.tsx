@@ -320,7 +320,7 @@ export const HabitTrackerView: React.FC = () => {
                             {h.name}
                           </button>
 
-                          <div className="flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity shrink-0">
+                          <div className="flex items-center gap-0.5 opacity-80 hover:opacity-100 transition-opacity shrink-0">
                             <button
                               type="button"
                               onClick={() =>

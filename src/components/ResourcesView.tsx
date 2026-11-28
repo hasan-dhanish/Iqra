@@ -713,7 +713,7 @@ export const ResourcesView: React.FC = () => {
                 type="button"
                 onClick={() => setConfirmDeleteFiles([folder])}
                 title="Move subfolder to Trash"
-                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md text-[#8E8E93] hover:text-red-600 shrink-0"
+                className="opacity-80 hover:opacity-100 transition-opacity p-1 rounded-md text-[#8E8E93] hover:text-red-600 shrink-0"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -775,7 +775,7 @@ export const ResourcesView: React.FC = () => {
                         ? 'opacity-100 bg-[#0A5386] border-[#0A5386] text-white'
                         : selectedIds.size > 0
                         ? 'opacity-100 border-[#A1A1AA] bg-white'
-                        : 'opacity-0 group-hover:opacity-100 border-[#A1A1AA] bg-white'
+                        : 'opacity-80 hover:opacity-100 border-[#A1A1AA] bg-white'
                     }`}
                   >
                     {selectedIds.has(file.id) && <Check className="w-3 h-3" />}
@@ -915,7 +915,7 @@ export const ResourcesView: React.FC = () => {
                         ? 'opacity-100 bg-[#0A5386] border-[#0A5386] text-white'
                         : selectedIds.size > 0
                         ? 'opacity-100 bg-white/95 border-[#A1A1AA]'
-                        : 'opacity-0 group-hover:opacity-100 bg-white/95 border-[#A1A1AA]'
+                        : 'opacity-80 hover:opacity-100 bg-white/95 border-[#A1A1AA]'
                     }`}
                   >
                     {selectedIds.has(file.id) && <Check className="w-3.5 h-3.5" />}
@@ -999,7 +999,7 @@ export const ResourcesView: React.FC = () => {
                             {file.name}
                           </span>
                         </button>
-                        <div className="relative flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        <div className="relative flex items-center gap-1 opacity-85 hover:opacity-100 transition-opacity shrink-0">
                           {(subfolders.length > 0 || folderStack.length > 1) && (
                             <button
                               type="button"

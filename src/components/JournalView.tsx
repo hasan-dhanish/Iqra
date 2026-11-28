@@ -2010,7 +2010,7 @@ export const JournalView: React.FC = () => {
                                 if (selectedImgId === imgItem.id) setSelectedImgId(null);
                               }}
                               title="Remove image"
-                              className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 -right-2 w-5 h-5 rounded-full bg-[#18181B]/85 hover:bg-red-600 text-white flex items-center justify-center shadow"
+                              className="opacity-85 hover:opacity-100 transition-opacity absolute -top-2 -right-2 w-5 h-5 rounded-full bg-[#18181B]/85 hover:bg-red-600 text-white flex items-center justify-center shadow"
                             >
                               <X className="w-3 h-3" />
                             </button>
@@ -2047,7 +2047,7 @@ export const JournalView: React.FC = () => {
                                 window.addEventListener('pointerup', onUp);
                               }}
                               title="Drag to resize image"
-                              className="opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-0.5 right-0.5 w-4 h-4 cursor-nwse-resize rounded-sm bg-[#0A5386] text-white flex items-center justify-center shadow"
+                              className="opacity-85 hover:opacity-100 transition-opacity absolute bottom-0.5 right-0.5 w-4 h-4 cursor-nwse-resize rounded-sm bg-[#0A5386] text-white flex items-center justify-center shadow"
                             >
                               <svg className="w-2.5 h-2.5" viewBox="0 0 10 10" fill="currentColor">
                                 <path d="M9 1v8H1L9 1z" />

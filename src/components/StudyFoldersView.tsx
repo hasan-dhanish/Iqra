@@ -274,7 +274,7 @@ export const StudyFoldersView: React.FC<StudyFoldersViewProps> = ({ onOpenFolder
                     </button>
 
                     {/* Hover Rename / Delete Controls */}
-                    <div className="absolute -top-2 -right-2 z-20 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="absolute -top-2 -right-2 z-20 flex items-center gap-1 opacity-90 hover:opacity-100 transition-opacity">
                       <button
                         type="button"
                         onClick={() => {

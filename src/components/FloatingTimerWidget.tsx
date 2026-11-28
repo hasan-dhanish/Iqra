@@ -385,7 +385,7 @@ export const FloatingTimerWidget: React.FC<FloatingTimerWidgetProps> = ({
           type="button"
           onClick={onDismiss}
           title="Hide Floating Timer"
-          className="absolute top-2.5 left-3 z-30 p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity text-[#8E8E93] hover:text-[#1C1C1E]"
+          className="absolute top-2.5 left-3 z-30 p-1 rounded-full opacity-80 hover:opacity-100 transition-opacity text-[#8E8E93] hover:text-[#1C1C1E]"
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -397,7 +397,7 @@ export const FloatingTimerWidget: React.FC<FloatingTimerWidgetProps> = ({
           type="button"
           onClick={onOpenTimerTab}
           title="Open Focus Timer"
-          className="absolute top-2.5 right-3 z-30 p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity text-[#8E8E93] hover:text-[#1C1C1E]"
+          className="absolute top-2.5 right-3 z-30 p-1 rounded-full opacity-80 hover:opacity-100 transition-opacity text-[#8E8E93] hover:text-[#1C1C1E]"
         >
           <Maximize2 className="w-3.5 h-3.5" />
         </button>

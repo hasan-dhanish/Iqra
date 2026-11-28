@@ -453,7 +453,7 @@ const FloatingPagePin = React.forwardRef<
 
         {/* Compact Top-Right Corner Drag & Delete */}
         {!connectActive && (
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2.5 right-0 z-30 flex items-center gap-1">
+          <div className="opacity-85 hover:opacity-100 transition-opacity absolute -top-2.5 right-0 z-30 flex items-center gap-1">
             <div
               onPointerDown={onDragStart}
               title="Drag page"
@@ -559,7 +559,7 @@ const FloatingPagePin = React.forwardRef<
                     setChecklist(next);
                     flushSave({ checklist: next });
                   }}
-                  className="opacity-0 group-hover:opacity-100 text-[#A1A1AA] hover:text-[#DC2626] shrink-0"
+                  className="opacity-80 hover:opacity-100 text-[#A1A1AA] hover:text-[#DC2626] shrink-0"
                 >
                   <Trash2 className="w-3 h-3" />
                 </button>
@@ -3689,7 +3689,7 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
                     type="button"
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={() => deleteZone(zone.id)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-[#71717A] hover:text-[#DC2626] shrink-0"
+                    className="opacity-80 hover:opacity-100 transition-opacity p-0.5 text-[#71717A] hover:text-[#DC2626] shrink-0"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -3699,7 +3699,7 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
                 <div
                   onPointerDown={(e) => startZoneResize(zone, e)}
                   title="Drag to resize zone"
-                  className="opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-1 right-1 w-4 h-4 cursor-nwse-resize flex items-end justify-end p-0.5"
+                  className="opacity-80 hover:opacity-100 transition-opacity absolute bottom-1 right-1 w-4 h-4 cursor-nwse-resize flex items-end justify-end p-0.5"
                 >
                   <span
                     className="w-2.5 h-2.5 border-r-2 border-b-2 rounded-br-xs"
@@ -3740,7 +3740,7 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={() => queueDelete('doc', doc.id)}
                       title="Delete pin"
-                      className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2.5 -right-2.5 z-10 w-6 h-6 rounded-full bg-[#18181B]/85 hover:bg-[#DC2626] text-white flex items-center justify-center shadow-md"
+                      className="opacity-85 hover:opacity-100 transition-opacity absolute -top-2.5 -right-2.5 z-10 w-6 h-6 rounded-full bg-[#18181B]/85 hover:bg-[#DC2626] text-white flex items-center justify-center shadow-md"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -3774,7 +3774,7 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
                   onSelectSide={(side) => handleSelectAnchor(cardId, side)}
                 />
                 {!connectMode && (
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 right-1 z-10 flex items-center gap-1">
+                  <div className="opacity-85 hover:opacity-100 transition-opacity absolute -top-2 right-1 z-10 flex items-center gap-1">
                     <a
                       href={doc.url}
                       download={doc.name}
