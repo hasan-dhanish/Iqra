@@ -16,6 +16,7 @@ interface FloatingTimerWidgetProps {
   onMidpointAck?: () => void;
   victoryDismissed?: boolean;
   onVictoryDismiss?: () => void;
+  onAddMinutes?: (mins: number) => void;
 }
 
 const VICTORY_IMAGES = [
@@ -59,6 +60,15 @@ export function preloadTimerAssets(): void {
     FIVE_MINS_FOCUS_IMAGE,
     ...VICTORY_IMAGES,
     ...RESET_IMAGES,
+    '/fpv-desk-day.jpg',
+    '/fpv-desk-night.jpg',
+    '/taskdone.jpg',
+    '/task-checkers/checker-1.png',
+    '/task-checkers/checker-2.png',
+    '/task-checkers/checker-3.png',
+    '/task-checkers/checker-4.png',
+    '/task-checkers/checker-5.png',
+    '/task-checkers/checker-6.png',
   ];
   for (const url of allUrls) {
     const img = new window.Image();
@@ -172,6 +182,7 @@ export const FloatingTimerWidget: React.FC<FloatingTimerWidgetProps> = ({
   onMidpointAck,
   victoryDismissed = false,
   onVictoryDismiss,
+  onAddMinutes,
 }) => {
   const isEmbedded = variant === 'embedded';
   // Smoothly interpolate progressPct between 1-second ticks for fluid 60fps baton & arc motion
@@ -527,8 +538,8 @@ export const FloatingTimerWidget: React.FC<FloatingTimerWidgetProps> = ({
         </g>
       </svg>
 
-      {/* Bottom Controls: Pause when running, Play + Restart when paused */}
-      <div className="relative z-20 flex items-center justify-center gap-2 sm:gap-3">
+      {/* Bottom Controls: Pause when running, Play + Restart when paused, +1m/+5m quick add */}
+      <div className="relative z-20 flex items-center justify-center gap-2 sm:gap-2.5">
         {running ? (
           <button
             type="button"
@@ -563,6 +574,24 @@ export const FloatingTimerWidget: React.FC<FloatingTimerWidgetProps> = ({
               <RotateCcw className={isEmbedded ? 'w-5 h-5' : 'w-3.5 h-3.5 sm:w-4 sm:h-4'} />
             </button>
           </>
+        )}
+
+        {onAddMinutes && (
+          <div className="flex items-center gap-1 ml-0.5">
+            {[1, 5].map((mins) => (
+              <button
+                key={mins}
+                type="button"
+                onClick={() => onAddMinutes(mins)}
+                title={`Add ${mins} minute${mins > 1 ? 's' : ''}`}
+                className={`ios-press rounded-full font-mono-num font-extrabold border border-[#E2E0D8] dark:border-white/20 bg-white/85 dark:bg-white/12 text-[#1C1C1E] dark:text-white hover:bg-white dark:hover:bg-white/20 shadow-sm transition-colors ${
+                  isEmbedded ? 'px-2.5 py-1.5 text-xs' : 'px-2 py-1 text-[10px]'
+                }`}
+              >
+                +{mins}m
+              </button>
+            ))}
+          </div>
         )}
       </div>
 

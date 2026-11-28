@@ -341,3 +341,41 @@ export async function fetchDriveFileJson<T>(token: string, fileId: string): Prom
   }
   return (await res.json()) as T;
 }
+
+export async function createDriveSubfolder(
+  token: string,
+  parentFolderId: string,
+  name: string
+): Promise<DriveFileItem> {
+  return driveFetch<DriveFileItem>(
+    'https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType,modifiedTime,webViewLink',
+    token,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: name.trim(),
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: [parentFolderId],
+      }),
+    }
+  );
+}
+
+export async function moveDriveFileToFolder(
+  token: string,
+  fileId: string,
+  targetFolderId: string,
+  currentParentId: string
+): Promise<DriveFileItem> {
+  const params = new URLSearchParams({
+    addParents: targetFolderId,
+    removeParents: currentParentId,
+    fields: 'id,name,mimeType,size,modifiedTime,webViewLink,thumbnailLink',
+  });
+  return driveFetch<DriveFileItem>(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?${params.toString()}`,
+    token,
+    { method: 'PATCH' }
+  );
+}

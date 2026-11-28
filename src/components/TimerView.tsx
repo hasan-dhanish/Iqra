@@ -39,6 +39,7 @@ export interface TimerViewProps {
   onMidpointAck?: () => void;
   victoryDismissed?: boolean;
   onVictoryDismiss?: () => void;
+  onAddMinutes?: (mins: number) => void;
 }
 
 export const TimerView: React.FC<TimerViewProps> = ({
@@ -63,6 +64,7 @@ export const TimerView: React.FC<TimerViewProps> = ({
   onMidpointAck,
   victoryDismissed,
   onVictoryDismiss,
+  onAddMinutes,
 }) => {
   const displaySeconds =
     mode === 'countdown' || mode === 'pomodoro' ? countdownLeft : stopwatchElapsed;
@@ -210,6 +212,7 @@ export const TimerView: React.FC<TimerViewProps> = ({
               onMidpointAck={onMidpointAck}
               victoryDismissed={victoryDismissed}
               onVictoryDismiss={onVictoryDismiss}
+              onAddMinutes={onAddMinutes}
             />
           </div>
 

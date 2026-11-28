@@ -1,11 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowLeft,
   Check,
   CheckCircle2,
+  ChevronRight,
   Cloud,
   ExternalLink,
   FileSpreadsheet,
   FileText,
+  Folder,
+  FolderInput,
+  FolderPlus,
   Image as ImageIcon,
   LayoutGrid,
   Library,
@@ -22,12 +27,14 @@ import {
 } from 'lucide-react';
 import {
   clearDriveToken,
+  createDriveSubfolder,
   findOrCreateIqraFolder,
   getCachedDriveToken,
   getDriveEmbedUrl,
   getGoogleClientId,
   isEditableGoogleFile,
   listDriveFiles,
+  moveDriveFileToFolder,
   renameDriveFile,
   requestDriveToken,
   saveGoogleClientId,
@@ -58,6 +65,11 @@ export const ResourcesView: React.FC = () => {
   const [clientIdInput, setClientIdInput] = useState(() => getGoogleClientId());
   const [driveToken, setDriveToken] = useState<string | null>(() => getCachedDriveToken());
   const [driveFolderId, setDriveFolderId] = useState<string | null>(null);
+  const [folderStack, setFolderStack] = useState<{ id: string; name: string }[]>([]);
+  const [showNewFolderInput, setShowNewFolderInput] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [movingFileId, setMovingFileId] = useState<string | null>(null);
   const [driveFiles, setDriveFiles] = useState<DriveFileItem[]>([]);
   const [driveLoading, setDriveLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
@@ -86,12 +98,15 @@ export const ResourcesView: React.FC = () => {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const loadDriveFolder = useCallback(async (token: string) => {
+  const loadDriveFolder = useCallback(async (token: string, targetFolderId?: string) => {
     setDriveLoading(true);
     setDriveError(null);
     try {
-      const folderId = await findOrCreateIqraFolder(token);
+      const folderId = targetFolderId ?? (await findOrCreateIqraFolder(token));
       setDriveFolderId(folderId);
+      if (!targetFolderId) {
+        setFolderStack([{ id: folderId, name: 'Iqra Desk' }]);
+      }
       const files = await listDriveFiles(token, folderId);
       setDriveFiles(files.filter((f) => !f.name.endsWith('.iqra.json')));
     } catch (err) {
@@ -109,6 +124,64 @@ export const ResourcesView: React.FC = () => {
       void loadDriveFolder(driveToken);
     }
   }, [driveToken, loadDriveFolder]);
+
+  const handleOpenSubfolder = (folder: DriveFileItem) => {
+    if (!driveToken) return;
+    setSelectedIds(new Set());
+    setFolderStack((prev) => [...prev, { id: folder.id, name: folder.name }]);
+    void loadDriveFolder(driveToken, folder.id);
+  };
+
+  const handleNavigateBreadcrumb = (idx: number) => {
+    if (!driveToken || idx < 0 || idx >= folderStack.length) return;
+    const target = folderStack[idx];
+    setSelectedIds(new Set());
+    setFolderStack((prev) => prev.slice(0, idx + 1));
+    void loadDriveFolder(driveToken, target.id);
+  };
+
+  const handleCreateSubfolder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = newFolderName.trim();
+    if (!trimmed || !driveToken || !driveFolderId) return;
+    setCreatingFolder(true);
+    setDriveError(null);
+    try {
+      const created = await createDriveSubfolder(driveToken, driveFolderId, trimmed);
+      setDriveFiles((prev) => [created, ...prev]);
+      setNewFolderName('');
+      setShowNewFolderInput(false);
+    } catch (err) {
+      setDriveError(err instanceof Error ? err.message : 'Could not create subfolder.');
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
+  const handleMoveFilesToFolder = async (fileIds: string[], targetFolderId: string) => {
+    if (!driveToken || !driveFolderId || fileIds.length === 0) return;
+    setDriveError(null);
+    try {
+      for (const fid of fileIds) {
+        if (fid === targetFolderId) continue;
+        await moveDriveFileToFolder(driveToken, fid, targetFolderId, driveFolderId);
+      }
+      const movedSet = new Set(fileIds);
+      setDriveFiles((prev) => prev.filter((f) => !movedSet.has(f.id)));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        fileIds.forEach((id) => next.delete(id));
+        return next;
+      });
+      setMovingFileId(null);
+      setMatrixPinnedMsg(
+        `Moved ${fileIds.length} ${fileIds.length === 1 ? 'item' : 'items'} to folder.`
+      );
+      window.setTimeout(() => setMatrixPinnedMsg(null), 2600);
+    } catch (err) {
+      setDriveError(err instanceof Error ? err.message : 'Could not move file(s).');
+    }
+  };
 
   const handleConnectDrive = async () => {
     const cid = clientIdInput.trim() || getGoogleClientId();
@@ -148,7 +221,7 @@ export const ResourcesView: React.FC = () => {
         done++;
         setUploadProgress({ done, total: list.length });
       }
-      await loadDriveFolder(driveToken);
+      await loadDriveFolder(driveToken, driveFolderId);
     } catch (err) {
       setDriveError(err instanceof Error ? err.message : 'Upload failed.');
     } finally {
@@ -269,8 +342,19 @@ export const ResourcesView: React.FC = () => {
     });
   };
 
+  const subfolders = useMemo(
+    () =>
+      driveFiles.filter(
+        (f) =>
+          f.mimeType === 'application/vnd.google-apps.folder' &&
+          (!search.trim() || f.name.toLowerCase().includes(search.trim().toLowerCase()))
+      ),
+    [driveFiles, search]
+  );
+
   const filteredFiles = useMemo(() => {
     return driveFiles.filter((file) => {
+      if (file.mimeType === 'application/vnd.google-apps.folder') return false;
       const category = classifyDriveFile(file);
       if (kindFilter !== 'All' && category !== kindFilter) return false;
       if (search.trim()) {
@@ -320,7 +404,7 @@ export const ResourcesView: React.FC = () => {
               <span>Drive Connected</span>
               <button
                 type="button"
-                onClick={() => driveToken && void loadDriveFolder(driveToken)}
+                onClick={() => driveToken && void loadDriveFolder(driveToken, driveFolderId ?? undefined)}
                 title="Refresh Drive"
                 className="p-0.5 rounded-md hover:bg-emerald-700/15 text-emerald-700"
               >
@@ -335,6 +419,17 @@ export const ResourcesView: React.FC = () => {
                 <LogOut className="w-3 h-3" />
               </button>
             </div>
+          )}
+
+          {driveToken && (
+            <button
+              type="button"
+              onClick={() => setShowNewFolderInput((v) => !v)}
+              className="ios-press inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold bg-[#0A5386] hover:bg-[#08446E] text-white rounded-xl shadow-xs whitespace-nowrap"
+            >
+              <FolderPlus className="w-3.5 h-3.5" />
+              New Subfolder
+            </button>
           )}
 
           <button
@@ -524,6 +619,106 @@ export const ResourcesView: React.FC = () => {
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Drive Breadcrumbs & New Subfolder Form */}
+      {driveToken && folderStack.length > 0 && (
+        <div className="paper-card rounded-2xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 border border-[#E2E0D8]/70">
+          <div className="flex items-center gap-1.5 flex-wrap text-xs">
+            {folderStack.length > 1 && (
+              <button
+                type="button"
+                onClick={() => handleNavigateBreadcrumb(folderStack.length - 2)}
+                title="Back to parent folder"
+                className="p-1 rounded-lg hover:bg-black/5 text-[#52525B]"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {folderStack.map((crumb, idx) => (
+              <React.Fragment key={crumb.id}>
+                {idx > 0 && <ChevronRight className="w-3.5 h-3.5 text-[#8E8E93]" />}
+                <button
+                  type="button"
+                  onClick={() => handleNavigateBreadcrumb(idx)}
+                  className={`px-2 py-0.5 rounded-lg font-semibold transition-colors ${
+                    idx === folderStack.length - 1
+                      ? 'bg-[#0A5386]/12 text-[#0A5386]'
+                      : 'text-[#52525B] hover:text-[#1C1C1E] hover:bg-black/5'
+                  }`}
+                >
+                  {crumb.name}
+                </button>
+              </React.Fragment>
+            ))}
+          </div>
+
+          {showNewFolderInput && (
+            <form onSubmit={(e) => void handleCreateSubfolder(e)} className="flex items-center gap-1.5">
+              <input
+                type="text"
+                autoFocus
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                placeholder="Subfolder name..."
+                className="px-2.5 py-1 text-xs rounded-lg border border-[#0A5386] bg-white focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={creatingFolder || !newFolderName.trim()}
+                className="px-2.5 py-1 rounded-lg bg-[#0A5386] text-white text-xs font-semibold disabled:opacity-50"
+              >
+                {creatingFolder ? 'Creating...' : 'Create'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNewFolderInput(false);
+                  setNewFolderName('');
+                }}
+                className="p-1 rounded-lg text-[#8E8E93] hover:text-[#1C1C1E]"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+
+      {/* Subfolders Grid */}
+      {driveToken && subfolders.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {subfolders.map((folder) => (
+            <div
+              key={folder.id}
+              className="paper-card rounded-2xl p-3 flex items-center justify-between gap-2 group hover:border-[#0A5386]/45 transition-colors"
+            >
+              <button
+                type="button"
+                onClick={() => handleOpenSubfolder(folder)}
+                className="flex items-center gap-2.5 min-w-0 flex-1 text-left"
+              >
+                <div className="w-9 h-9 rounded-xl bg-[#0A5386]/12 text-[#0A5386] flex items-center justify-center shrink-0">
+                  <Folder className="w-4 h-4 fill-current/15" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-[#1C1C1E] truncate group-hover:underline">
+                    {folder.name}
+                  </div>
+                  <div className="text-[10px] text-[#8E8E93]">Subfolder</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteFiles([folder])}
+                title="Move subfolder to Trash"
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-md text-[#8E8E93] hover:text-red-600 shrink-0"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -804,7 +999,19 @@ export const ResourcesView: React.FC = () => {
                             {file.name}
                           </span>
                         </button>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                        <div className="relative flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          {(subfolders.length > 0 || folderStack.length > 1) && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setMovingFileId((prev) => (prev === file.id ? null : file.id))
+                              }
+                              title="Move to subfolder"
+                              className="p-1 rounded-md text-[#8E8E93] hover:text-[#0A5386]"
+                            >
+                              <FolderInput className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => {
@@ -824,6 +1031,38 @@ export const ResourcesView: React.FC = () => {
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
+                          {movingFileId === file.id && (
+                            <div className="absolute right-0 top-full mt-1 w-44 paper-card rounded-xl border border-[#E2E0D8] shadow-xl p-1.5 z-30 space-y-0.5">
+                              <div className="px-2 py-1 text-[10px] font-bold text-[#8E8E93] uppercase">
+                                Move to folder
+                              </div>
+                              {folderStack.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void handleMoveFilesToFolder(
+                                      [file.id],
+                                      folderStack[folderStack.length - 2].id
+                                    )
+                                  }
+                                  className="w-full text-left px-2 py-1 rounded-lg text-xs font-medium text-[#1C1C1E] hover:bg-black/5 truncate"
+                                >
+                                  ↑ {folderStack[folderStack.length - 2].name}
+                                </button>
+                              )}
+                              {subfolders.map((sf) => (
+                                <button
+                                  key={sf.id}
+                                  type="button"
+                                  onClick={() => void handleMoveFilesToFolder([file.id], sf.id)}
+                                  className="w-full text-left px-2 py-1 rounded-lg text-xs font-medium text-[#1C1C1E] hover:bg-black/5 truncate flex items-center gap-1.5"
+                                >
+                                  <Folder className="w-3 h-3 text-[#0A5386] shrink-0" />
+                                  <span className="truncate">{sf.name}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </>
                     )}

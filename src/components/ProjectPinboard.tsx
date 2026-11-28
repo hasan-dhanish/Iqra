@@ -20,6 +20,7 @@ import {
   Layers,
   List,
   ListChecks,
+  ListVideo,
   Maximize2,
   Minimize2,
   Minus,
@@ -658,47 +659,321 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
   const [confirmClearAll, setConfirmClearAll] = useState(false);
   const [showPinMenu, setShowPinMenu] = useState(false);
 
-  // Pinned YouTube Player inside Infinite Matrix (world coordinates)
-  const [showMatrixYt, setShowMatrixYt] = useState<boolean>(() => {
+  // Multiple Pinned YouTube Sessions inside Infinite Matrix (world coordinates)
+  interface MatrixYtSession {
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    minimized: boolean;
+    query: string;
+    videoId: string;
+    playlistId?: string;
+    title?: string;
+  }
+  interface SavedYtPlaylist {
+    id: string;
+    name: string;
+    videos: { videoId: string; title: string; channel: string; thumbnail: string }[];
+  }
+  const [ytSessions, setYtSessions] = useState<MatrixYtSession[]>(() => {
     try {
-      return localStorage.getItem('iqra_matrix_yt_open_v1') === '1';
-    } catch {
-      return false;
-    }
-  });
-  const [ytMinimized, setYtMinimized] = useState(false);
-  const [ytQuery, setYtQuery] = useState('');
-  const [ytVideoId, setYtVideoId] = useState<string>(() => {
-    try {
-      return localStorage.getItem('iqra_matrix_yt_v1') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [ytResults, setYtResults] = useState<
-    { videoId: string; title: string; channel: string; thumbnail: string }[]
-  >([]);
-  const [ytSearching, setYtSearching] = useState(false);
-  const [ytPos, setYtPos] = useState<{ x: number; y: number }>(() => {
-    try {
-      const raw = localStorage.getItem('iqra_matrix_yt_pos_v1');
-      if (raw) return JSON.parse(raw) as { x: number; y: number };
+      const raw = localStorage.getItem(`iqra_matrix_yt_sessions_${project.id}`);
+      if (raw) return JSON.parse(raw) as MatrixYtSession[];
+      // Migrate legacy single YT session if it was open
+      if (localStorage.getItem('iqra_matrix_yt_open_v1') === '1') {
+        const legacyVid = localStorage.getItem('iqra_matrix_yt_v1') || '';
+        const legacyPos = JSON.parse(localStorage.getItem('iqra_matrix_yt_pos_v1') || '{"x":180,"y":120}');
+        const legacySize = JSON.parse(localStorage.getItem('iqra_matrix_yt_size_v1') || '{"w":520,"h":380}');
+        return [
+          {
+            id: `yt_${Date.now().toString(36)}`,
+            x: legacyPos.x ?? 180,
+            y: legacyPos.y ?? 120,
+            w: Math.max(460, legacySize.w ?? 520),
+            h: Math.max(340, legacySize.h ?? 380),
+            minimized: false,
+            query: '',
+            videoId: legacyVid,
+          },
+        ];
+      }
     } catch {
       // ignore
     }
-    return { x: 180, y: 120 };
+    return [];
   });
-  const [ytSize, setYtSize] = useState<{ w: number; h: number }>(() => {
+  const [ytResultsById, setYtResultsById] = useState<
+    Record<string, { videoId: string; title: string; channel: string; thumbnail: string }[]>
+  >({});
+  const [ytSearchingId, setYtSearchingId] = useState<string | null>(null);
+  const [ytPlaylistDrawerId, setYtPlaylistDrawerId] = useState<string | null>(null);
+  const [savedPlaylists, setSavedPlaylists] = useState<SavedYtPlaylist[]>([]);
+  const [showMatrixExportMenu, setShowMatrixExportMenu] = useState(false);
+
+  useEffect(() => {
     try {
-      const raw = localStorage.getItem('iqra_matrix_yt_size_v1');
-      if (raw) return JSON.parse(raw) as { w: number; h: number };
+      const raw = localStorage.getItem('iqra_yt_playlists_v1');
+      if (raw) setSavedPlaylists(JSON.parse(raw) as SavedYtPlaylist[]);
     } catch {
       // ignore
     }
-    return { w: 360, h: 280 };
-  });
-  const ytDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
-  const ytResizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number } | null>(null);
+  }, [ytPlaylistDrawerId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`iqra_matrix_yt_sessions_${project.id}`, JSON.stringify(ytSessions));
+    } catch {
+      // ignore
+    }
+  }, [ytSessions, project.id]);
+
+  const addMatrixYtSession = () => {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    const vw = rect ? rect.width : window.innerWidth;
+    const vh = rect ? rect.height : window.innerHeight;
+    const offset = (ytSessions.length % 5) * 34;
+    const nextSession: MatrixYtSession = {
+      id: `yt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
+      x: Math.round((vw / 2 - panRef.current.x) / zoomRef.current - 260) + offset,
+      y: Math.round((vh / 2 - panRef.current.y) / zoomRef.current - 190) + offset,
+      w: 520,
+      h: 380,
+      minimized: false,
+      query: '',
+      videoId: '',
+    };
+    setYtSessions((prev) => [...prev, nextSession]);
+  };
+
+  const updateYtSession = (id: string, patch: Partial<MatrixYtSession>) => {
+    setYtSessions((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
+  };
+
+  const removeYtSession = (id: string) => {
+    setYtSessions((prev) => prev.filter((s) => s.id !== id));
+    if (ytPlaylistDrawerId === id) setYtPlaylistDrawerId(null);
+  };
+
+  // --- Export Infinite Matrix (PNG Image, PDF, SVG, JSON) ---
+  const exportMatrixAs = (format: 'png' | 'pdf' | 'svg' | 'json') => {
+    setShowMatrixExportMenu(false);
+    const safeName = (project.title || 'study-matrix').replace(/[^a-z0-9-_]+/gi, '_').toLowerCase();
+
+    const getNoteLabel = (content?: string) =>
+      (content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) || 'Note Page';
+
+    if (format === 'json') {
+      const payload = {
+        title: project.title,
+        exportedAt: new Date().toISOString(),
+        zones,
+        connectors,
+        strokes,
+        positions,
+        drivePins,
+        ytSessions,
+        pages: pinnedPages.map((p) => ({ id: p.id, title: getNoteLabel(p.content), content: p.content })),
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeName}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    // Compute world bounding box across all elements
+    const boxes: { x: number; y: number; w: number; h: number; label: string; kind: string; color?: string }[] = [];
+    zones.forEach((z) => boxes.push({ x: z.x, y: z.y, w: z.w, h: z.h, label: z.title || 'Zone', kind: 'zone', color: z.color }));
+    pinnedPages.forEach((p, idx) => {
+      const r = getCardRect(`page_${p.id}`) ?? { ...getPos(`page_${p.id}`, projectDocs.length + idx), w: 300, h: 165 };
+      boxes.push({ ...r, label: getNoteLabel(p.content), kind: 'page' });
+    });
+    projectDocs.forEach((d, idx) => {
+      const r = getCardRect(`doc_${d.id}`) ?? { ...getPos(`doc_${d.id}`, idx), w: 240, h: 190 };
+      boxes.push({ ...r, label: d.name, kind: d.mimeType.startsWith('image/') ? 'image' : 'file' });
+    });
+    drivePins.forEach((d) => boxes.push({ x: d.x, y: d.y, w: d.w, h: d.h, label: d.file.name, kind: 'drive' }));
+    ytSessions.forEach((s, idx) =>
+      boxes.push({ x: s.x, y: s.y, w: s.w, h: s.minimized ? 44 : s.h, label: s.title || `YouTube ${idx + 1}`, kind: 'yt' })
+    );
+
+    const xs: number[] = [];
+    const ys: number[] = [];
+    boxes.forEach((b) => {
+      xs.push(b.x, b.x + b.w);
+      ys.push(b.y, b.y + b.h);
+    });
+    strokes.forEach((s) => s.points.forEach(([px, py]) => { xs.push(px); ys.push(py); }));
+
+    const pad = 60;
+    const minX = (xs.length ? Math.min(...xs) : 0) - pad;
+    const minY = (ys.length ? Math.min(...ys) : 0) - pad;
+    const maxX = (xs.length ? Math.max(...xs) : 1200) + pad;
+    const maxY = (ys.length ? Math.max(...ys) : 800) + pad;
+    const width = Math.max(400, Math.round(maxX - minX));
+    const height = Math.max(300, Math.round(maxY - minY));
+
+    if (format === 'svg') {
+      const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const zoneSvg = boxes
+        .filter((b) => b.kind === 'zone')
+        .map(
+          (b) =>
+            `<rect x="${b.x - minX}" y="${b.y - minY}" width="${b.w}" height="${b.h}" rx="16" fill="${b.color || '#0A5386'}18" stroke="${b.color || '#0A5386'}" stroke-dasharray="8 6" stroke-width="2" />` +
+            `<text x="${b.x - minX + 14}" y="${b.y - minY + 24}" font-family="sans-serif" font-size="14" font-weight="700" fill="${b.color || '#0A5386'}">${esc(b.label)}</text>`
+        )
+        .join('\n');
+      const cardSvg = boxes
+        .filter((b) => b.kind !== 'zone')
+        .map(
+          (b) =>
+            `<rect x="${b.x - minX}" y="${b.y - minY}" width="${b.w}" height="${b.h}" rx="14" fill="#ffffff" stroke="#E4E2DC" stroke-width="2" />` +
+            `<text x="${b.x - minX + 14}" y="${b.y - minY + 28}" font-family="sans-serif" font-size="14" font-weight="700" fill="#18181B">${esc(b.label)}</text>`
+        )
+        .join('\n');
+      const strokeSvg = strokes
+        .map((s) => {
+          const pts = s.points.map(([px, py]) => `${px - minX},${py - minY}`).join(' ');
+          return `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="${s.width}" stroke-linecap="round" stroke-linejoin="round" />`;
+        })
+        .join('\n');
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#FAF9F6"/>${zoneSvg}${cardSvg}${strokeSvg}</svg>`;
+      const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeName}.svg`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    // Render to Canvas for PNG / PDF
+    const canvas = document.createElement('canvas');
+    const scale = Math.min(2, 2400 / Math.max(width, height));
+    canvas.width = Math.round(width * scale);
+    canvas.height = Math.round(height * scale);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.scale(scale, scale);
+
+    ctx.fillStyle = '#FAF9F6';
+    ctx.fillRect(0, 0, width, height);
+
+    // Subtle grid
+    ctx.strokeStyle = 'rgba(0,0,0,0.045)';
+    ctx.lineWidth = 1;
+    for (let gx = 0; gx < width; gx += 32) {
+      ctx.beginPath();
+      ctx.moveTo(gx, 0);
+      ctx.lineTo(gx, height);
+      ctx.stroke();
+    }
+    for (let gy = 0; gy < height; gy += 32) {
+      ctx.beginPath();
+      ctx.moveTo(0, gy);
+      ctx.lineTo(width, gy);
+      ctx.stroke();
+    }
+
+    // Zones
+    boxes.filter((b) => b.kind === 'zone').forEach((b) => {
+      ctx.save();
+      ctx.fillStyle = `${b.color || '#0A5386'}18`;
+      ctx.strokeStyle = b.color || '#0A5386';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      ctx.roundRect(b.x - minX, b.y - minY, b.w, b.h, 16);
+      ctx.fill();
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = b.color || '#0A5386';
+      ctx.font = 'bold 14px system-ui, sans-serif';
+      ctx.fillText(b.label, b.x - minX + 14, b.y - minY + 24);
+      ctx.restore();
+    });
+
+    // Cards
+    boxes.filter((b) => b.kind !== 'zone').forEach((b) => {
+      ctx.save();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.strokeStyle = '#E4E2DC';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(b.x - minX, b.y - minY, b.w, b.h, 14);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#18181B';
+      ctx.font = 'bold 14px system-ui, sans-serif';
+      ctx.fillText(b.label.slice(0, 42), b.x - minX + 14, b.y - minY + 28);
+      ctx.fillStyle = '#71717A';
+      ctx.font = '11px system-ui, sans-serif';
+      ctx.fillText(b.kind.toUpperCase(), b.x - minX + 14, b.y - minY + 48);
+      ctx.restore();
+    });
+
+    // Connectors
+    connectors.forEach((conn) => {
+      const r1 = getCardRect(conn.fromId);
+      const r2 = getCardRect(conn.toId);
+      if (!r1 || !r2) return;
+      const p1 = getAnchorPoint(r1, conn.fromAnchor ?? 'right');
+      const p2 = getAnchorPoint(r2, conn.toAnchor ?? 'left');
+      ctx.save();
+      ctx.strokeStyle = conn.color;
+      ctx.lineWidth = 2.5;
+      if (conn.style === 'dashed') ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(p1.x - minX, p1.y - minY);
+      ctx.lineTo(p2.x - minX, p2.y - minY);
+      ctx.stroke();
+      ctx.restore();
+    });
+
+    // Freehand strokes
+    strokes.forEach((s) => {
+      if (s.points.length < 2) return;
+      ctx.save();
+      ctx.strokeStyle = s.color;
+      ctx.lineWidth = s.width;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(s.points[0][0] - minX, s.points[0][1] - minY);
+      for (let i = 1; i < s.points.length; i++) {
+        ctx.lineTo(s.points[i][0] - minX, s.points[i][1] - minY);
+      }
+      ctx.stroke();
+      ctx.restore();
+    });
+
+    const dataUrl = canvas.toDataURL('image/png');
+    if (format === 'png') {
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `${safeName}.png`;
+      a.click();
+      return;
+    }
+
+    // PDF via clean print window
+    const win = window.open('', '_blank', 'width=1000,height=750');
+    if (!win) return;
+    win.document.write(
+      `<!DOCTYPE html><html><head><title>${project.title || 'Study Matrix'}</title>` +
+        `<style>body{margin:0;padding:24px;font-family:system-ui,sans-serif;background:#fff;text-align:center}` +
+        `h1{font-size:18px;margin:0 0 12px}img{max-width:100%;height:auto;border:1px solid #e4e2dc;border-radius:12px}</style>` +
+        `</head><body><h1>${project.title || 'Study Matrix'}</h1><img src="${dataUrl}" />` +
+        `<script>window.onload=function(){window.print();}</script></body></html>`
+    );
+    win.document.close();
+  };
 
   // Pinned Google Drive Files inside Infinite Matrix
   interface MatrixDrivePin {
@@ -775,52 +1050,28 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
     setShowImportModal(false);
   };
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('iqra_matrix_yt_size_v1', JSON.stringify(ytSize));
-    } catch {
-      // ignore
-    }
-  }, [ytSize]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('iqra_matrix_yt_open_v1', showMatrixYt ? '1' : '0');
-    } catch {
-      // ignore
-    }
-  }, [showMatrixYt]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('iqra_matrix_yt_pos_v1', JSON.stringify(ytPos));
-    } catch {
-      // ignore
-    }
-  }, [ytPos]);
-
-  const handleMatrixYtSubmit = async (e: React.FormEvent) => {
+  const handleMatrixYtSubmit = async (sessionId: string, rawQuery: string, e: React.FormEvent) => {
     e.preventDefault();
-    const raw = ytQuery.trim();
+    const raw = rawQuery.trim();
     if (!raw) return;
 
-    // Extract videoId if a YouTube URL was pasted
+    // Extract videoId or playlistId if a YouTube URL was pasted
     try {
       const u = new URL(raw.startsWith('http') ? raw : `https://${raw}`);
       if (u.hostname.includes('youtube.com') || u.hostname.includes('youtu.be')) {
+        const listId = u.searchParams.get('list') || '';
         const vid =
           u.searchParams.get('v') ||
           (u.hostname.includes('youtu.be') ? u.pathname.replace(/^\//, '').split('/')[0] : '') ||
           (u.pathname.includes('/embed/') ? u.pathname.split('/embed/')[1]?.split('/')[0] : '') ||
           (u.pathname.includes('/shorts/') ? u.pathname.split('/shorts/')[1]?.split('/')[0] : '');
-        if (vid) {
-          setYtVideoId(vid);
-          setYtResults([]);
-          try {
-            localStorage.setItem('iqra_matrix_yt_v1', vid);
-          } catch {
-            // ignore
-          }
+        if (listId || vid) {
+          updateYtSession(sessionId, {
+            videoId: vid || '',
+            playlistId: listId || undefined,
+            title: listId ? 'YouTube Playlist' : undefined,
+          });
+          setYtResultsById((prev) => ({ ...prev, [sessionId]: [] }));
           return;
         }
       }
@@ -828,19 +1079,19 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
       // not a URL, treat as search query
     }
 
-    setYtSearching(true);
+    setYtSearchingId(sessionId);
     try {
       const res = await fetch(`/api/yt-search?q=${encodeURIComponent(raw)}`);
       if (res.ok) {
         const data = (await res.json()) as {
           items?: { videoId: string; title: string; channel: string; thumbnail: string }[];
         };
-        setYtResults((data.items ?? []).slice(0, 5));
+        setYtResultsById((prev) => ({ ...prev, [sessionId]: (data.items ?? []).slice(0, 6) }));
       }
     } catch {
       // ignore
     } finally {
-      setYtSearching(false);
+      setYtSearchingId(null);
     }
   };
 
@@ -1159,6 +1410,14 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
       const size = cardSizes[cardId] ?? { w: 300, h: 165 };
       return { x: p.x, y: p.y, w: size.w, h: size.h };
     }
+    const drivePin = drivePins.find((d) => `drive_${d.id}` === cardId);
+    if (drivePin) {
+      return { x: drivePin.x, y: drivePin.y, w: drivePin.w, h: drivePin.h };
+    }
+    const ytPin = ytSessions.find((s) => `yt_${s.id}` === cardId);
+    if (ytPin) {
+      return { x: ytPin.x, y: ytPin.y, w: ytPin.w, h: ytPin.minimized ? 44 : ytPin.h };
+    }
     return null;
   };
 
@@ -1424,6 +1683,10 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
       };
       rects.push({ x1: r.x, y1: r.y, x2: r.x + r.w, y2: r.y + r.h });
     });
+    drivePins.forEach((d) => rects.push({ x1: d.x, y1: d.y, x2: d.x + d.w, y2: d.y + d.h }));
+    ytSessions.forEach((s) =>
+      rects.push({ x1: s.x, y1: s.y, x2: s.x + s.w, y2: s.y + (s.minimized ? 44 : s.h) })
+    );
     strokes.forEach((s) => {
       s.points.forEach(([x, y]) => rects.push({ x1: x, y1: y, x2: x, y2: y }));
     });
@@ -1666,6 +1929,7 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
   };
 
   const startZoneDrag = (zone: BoardZone, e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest('input, textarea, button')) return;
     e.preventDefault();
     e.stopPropagation();
     const startSnap = snapshotNow();
@@ -1866,22 +2130,25 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
 
         {showElementsMenu && (
           <div className="mt-2 w-60 max-h-72 overflow-y-auto paper-card rounded-2xl p-2 shadow-2xl border border-[#E4E2DC] space-y-1 backdrop-blur-md">
-            {totalPins + zones.length + drivePins.length + (showMatrixYt ? 1 : 0) === 0 ? (
+            {totalPins + zones.length + drivePins.length + ytSessions.length === 0 ? (
               <div className="py-4 text-center text-[11px] text-[#71717A]">
                 No elements on board yet.
               </div>
             ) : (
               <>
-                {showMatrixYt && (
+                {ytSessions.map((yt, idx) => (
                   <button
+                    key={yt.id}
                     type="button"
-                    onClick={() => jumpToWorldPoint(ytPos.x + ytSize.w / 2, ytPos.y + ytSize.h / 2)}
+                    onClick={() => jumpToWorldPoint(yt.x + yt.w / 2, yt.y + yt.h / 2)}
                     className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left text-xs hover:bg-black/5 text-[#18181B]"
                   >
                     <Tv className="w-3.5 h-3.5 text-[#A43850] shrink-0" />
-                    <span className="truncate font-medium">YouTube Player</span>
+                    <span className="truncate font-medium">
+                      {yt.title || `YouTube Session ${ytSessions.length > 1 ? idx + 1 : ''}`}
+                    </span>
                   </button>
-                )}
+                ))}
                 {drivePins.map((dp) => (
                   <button
                     key={dp.id}
@@ -2377,28 +2644,20 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
 
         <button
           type="button"
-          onClick={() => {
-            if (!showMatrixYt) {
-              // Pin near the center of the current viewport in world coordinates
-              const vw = typeof window !== 'undefined' ? window.innerWidth : 1000;
-              const vh = typeof window !== 'undefined' ? window.innerHeight : 700;
-              setYtPos({
-                x: Math.round((vw / 2 - pan.x) / zoom - 180),
-                y: Math.round((vh / 2 - pan.y) / zoom - 150),
-              });
-              setShowMatrixYt(true);
-            } else {
-              setShowMatrixYt(false);
-            }
-          }}
-          title={showMatrixYt ? 'Unpin YouTube Player' : 'Pin YouTube Player on Matrix'}
-          className={`ios-press shrink-0 inline-flex items-center justify-center p-2 rounded-full ${
-            showMatrixYt
+          onClick={addMatrixYtSession}
+          title="Open a YouTube Session on Matrix (click again to add another)"
+          className={`ios-press relative shrink-0 inline-flex items-center justify-center p-2 rounded-full ${
+            ytSessions.length > 0
               ? 'bg-[#A43850] text-white'
               : 'bg-white/80 border border-[#E4E2DC] text-[#18181B]'
           }`}
         >
           <Tv className="w-3.5 h-3.5" />
+          {ytSessions.length > 0 && (
+            <span className="ml-1 text-[9px] font-extrabold leading-none">
+              +{ytSessions.length}
+            </span>
+          )}
         </button>
 
         <div className="w-px h-5 bg-[#E4E2DC] mx-0.5 shrink-0" />
@@ -2412,6 +2671,7 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
         >
           <Undo2 className="w-3.5 h-3.5" />
         </button>
+
         <button
           type="button"
           disabled={historyCounts.redo === 0}
@@ -2456,13 +2716,60 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
 
         <div className="w-px h-5 bg-[#E4E2DC] mx-0.5 shrink-0" />
 
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowMatrixExportMenu((v) => !v)}
+            title="Export Matrix (PNG, PDF, SVG, JSON)"
+            className="ios-press inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/80 border border-[#E4E2DC] text-[#18181B] text-[11px] font-bold hover:bg-white"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Export</span>
+          </button>
+          {showMatrixExportMenu && (
+            <div
+              onMouseLeave={() => setShowMatrixExportMenu(false)}
+              className="absolute bottom-full right-0 mb-2 w-44 paper-card rounded-xl border border-[#E4E2DC] shadow-2xl p-1.5 z-50 space-y-0.5"
+            >
+              <button
+                type="button"
+                onClick={() => exportMatrixAs('png')}
+                className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#18181B] hover:bg-black/5"
+              >
+                Export as PNG Image
+              </button>
+              <button
+                type="button"
+                onClick={() => exportMatrixAs('pdf')}
+                className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#18181B] hover:bg-black/5"
+              >
+                Export as PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => exportMatrixAs('svg')}
+                className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#18181B] hover:bg-black/5"
+              >
+                Export as SVG Vector
+              </button>
+              <button
+                type="button"
+                onClick={() => exportMatrixAs('json')}
+                className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#18181B] hover:bg-black/5"
+              >
+                Export as JSON Data
+              </button>
+            </div>
+          )}
+        </div>
+
         <button
           type="button"
           disabled={
             totalPins +
               zones.length +
               drivePins.length +
-              (showMatrixYt ? 1 : 0) +
+              ytSessions.length +
               connectors.length +
               strokes.length ===
             0
@@ -2556,7 +2863,7 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
       </div>
 
       {/* Empty Canvas Subtle Hint */}
-      {totalPins + zones.length + drivePins.length + (showMatrixYt ? 1 : 0) === 0 && (
+      {totalPins + zones.length + drivePins.length + ytSessions.length === 0 && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div className="text-center px-4">
             <p className="text-sm font-medium text-[#71717A]">
@@ -2599,185 +2906,276 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
           }}
           className="absolute top-0 left-0 select-text"
         >
-          {/* Pinned YouTube Player on the Infinite Matrix (world coordinates, movable & resizable) */}
-          {showMatrixYt && (
-            <div
-              onPointerDown={(e) => e.stopPropagation()}
-              style={{
-                left: ytPos.x,
-                top: ytPos.y,
-                width: ytSize.w,
-                height: ytMinimized ? 'auto' : ytSize.h,
-              }}
-              className="absolute z-20 paper-card rounded-2xl shadow-2xl border border-[#E4E2DC] overflow-hidden flex flex-col"
-            >
-              {/* Draggable Header */}
+          {/* Multiple Pinned YouTube Sessions on Infinite Matrix (movable, resizable, playlist-capable & connectable) */}
+          {ytSessions.map((yt, idx) => {
+            const ytCardId = `yt_${yt.id}`;
+            const ytActiveSide = connectFrom?.cardId === ytCardId ? connectFrom.side : null;
+            const results = ytResultsById[yt.id] ?? [];
+            const isSearching = ytSearchingId === yt.id;
+            const showPlaylists = ytPlaylistDrawerId === yt.id;
+            const embedSrc = yt.playlistId
+              ? yt.videoId
+                ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(yt.videoId)}?list=${encodeURIComponent(yt.playlistId)}&autoplay=1`
+                : `https://www.youtube-nocookie.com/embed/videoseries?list=${encodeURIComponent(yt.playlistId)}&autoplay=1`
+              : yt.videoId
+              ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(yt.videoId)}?autoplay=1`
+              : '';
+
+            return (
               <div
-                onPointerDown={(e) => {
-                  if ((e.target as HTMLElement).closest('button')) return;
-                  e.stopPropagation();
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  ytDragRef.current = {
-                    startX: e.clientX,
-                    startY: e.clientY,
-                    origX: ytPos.x,
-                    origY: ytPos.y,
-                  };
+                key={yt.id}
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{
+                  left: yt.x,
+                  top: yt.y,
+                  width: yt.w,
+                  height: yt.minimized ? 'auto' : yt.h,
                 }}
-                onPointerMove={(e) => {
-                  if (!ytDragRef.current) return;
-                  const dx = (e.clientX - ytDragRef.current.startX) / zoom;
-                  const dy = (e.clientY - ytDragRef.current.startY) / zoom;
-                  setYtPos({
-                    x: ytDragRef.current.origX + dx,
-                    y: ytDragRef.current.origY + dy,
-                  });
-                }}
-                onPointerUp={() => {
-                  ytDragRef.current = null;
-                }}
-                className="px-3 py-2 bg-[#A43850]/10 border-b border-[#E4E2DC] flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing select-none shrink-0"
+                className={`absolute z-20 overflow-visible ${
+                  ytActiveSide ? 'ring-2 ring-[#0A5386]/70 rounded-2xl' : ''
+                }`}
               >
-                <div className="flex items-center gap-1.5 text-xs font-bold text-[#1C1C1E]">
-                  <Tv className="w-3.5 h-3.5 text-[#A43850]" />
-                  <span>YouTube Player</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setYtMinimized((m) => !m)}
-                    title={ytMinimized ? 'Expand Player' : 'Minimize Player'}
-                    className="p-1 rounded-lg text-[#52525B] hover:text-[#1C1C1E] hover:bg-black/5"
-                  >
-                    {ytMinimized ? (
-                      <Maximize2 className="w-3.5 h-3.5" />
-                    ) : (
-                      <Minimize2 className="w-3.5 h-3.5" />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowMatrixYt(false)}
-                    title="Unpin Player"
-                    className="p-1 rounded-lg text-[#52525B] hover:text-red-600 hover:bg-black/5"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {!ytMinimized && (
-                <div className="p-2.5 flex flex-col gap-2 flex-1 min-h-0 relative">
-                  <form onSubmit={(e) => void handleMatrixYtSubmit(e)} className="flex gap-1.5 shrink-0">
-                    <input
-                      type="text"
-                      value={ytQuery}
-                      onChange={(e) => setYtQuery(e.target.value)}
-                      placeholder="Paste YouTube URL or search..."
-                      className="flex-1 min-w-0 px-2.5 py-1.5 text-[11px] rounded-xl border border-[#E2E0D8] bg-white/80 focus:outline-none focus:border-[#A43850]"
-                    />
-                    <button
-                      type="submit"
-                      disabled={ytSearching}
-                      className="ios-press px-2.5 py-1.5 rounded-xl bg-[#A43850] text-white text-[11px] font-semibold shrink-0"
-                    >
-                      {ytSearching ? '...' : <Search className="w-3.5 h-3.5" />}
-                    </button>
-                  </form>
-
-                  {ytResults.length > 0 && (
-                    <div className="max-h-36 overflow-y-auto space-y-1 pr-0.5 shrink-0">
-                      {ytResults.map((item) => (
-                        <button
-                          key={item.videoId}
-                          type="button"
-                          onClick={() => {
-                            setYtVideoId(item.videoId);
-                            setYtResults([]);
-                            try {
-                              localStorage.setItem('iqra_matrix_yt_v1', item.videoId);
-                            } catch {
-                              // ignore
-                            }
-                          }}
-                          className="w-full flex items-center gap-2 p-1.5 rounded-xl hover:bg-black/5 text-left"
-                        >
-                          <img
-                            src={item.thumbnail}
-                            alt=""
-                            className="w-12 h-8 rounded-md object-cover shrink-0"
-                          />
-                          <div className="min-w-0">
-                            <div className="text-[11px] font-semibold text-[#1C1C1E] line-clamp-1">
-                              {item.title}
-                            </div>
-                            <div className="text-[10px] text-[#8E8E93] truncate">{item.channel}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {ytVideoId ? (
-                    <div className="w-full flex-1 min-h-[140px] rounded-xl overflow-hidden bg-black">
-                      <iframe
-                        src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(ytVideoId)}?autoplay=1`}
-                        title="Study Matrix YouTube Player"
-                        className="w-full h-full border-0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex items-center justify-center p-4 text-center text-[11px] text-[#8E8E93] border border-dashed border-[#D6D3CB] rounded-xl">
-                      Search a topic or paste a YouTube link above to watch right on your matrix.
-                    </div>
-                  )}
-
-                  {/* Bottom-Right Resize Handle */}
+                <AnchorDots
+                  visible={connectMode}
+                  activeSide={ytActiveSide}
+                  onSelectSide={(side) => handleSelectAnchor(ytCardId, side)}
+                />
+                <div className="w-full h-full paper-card rounded-2xl shadow-2xl border border-[#E4E2DC] overflow-hidden flex flex-col">
+                  {/* Draggable Header */}
                   <div
                     onPointerDown={(e) => {
+                      if ((e.target as HTMLElement).closest('button')) return;
                       e.stopPropagation();
-                      e.currentTarget.setPointerCapture(e.pointerId);
-                      ytResizeRef.current = {
-                        startX: e.clientX,
-                        startY: e.clientY,
-                        origW: ytSize.w,
-                        origH: ytSize.h,
+                      const startX = e.clientX;
+                      const startY = e.clientY;
+                      const origX = yt.x;
+                      const origY = yt.y;
+                      const onMove = (ev: PointerEvent) => {
+                        const dx = (ev.clientX - startX) / zoomRef.current;
+                        const dy = (ev.clientY - startY) / zoomRef.current;
+                        updateYtSession(yt.id, { x: Math.round(origX + dx), y: Math.round(origY + dy) });
                       };
+                      const onUp = () => {
+                        window.removeEventListener('pointermove', onMove);
+                        window.removeEventListener('pointerup', onUp);
+                      };
+                      window.addEventListener('pointermove', onMove);
+                      window.addEventListener('pointerup', onUp);
                     }}
-                    onPointerMove={(e) => {
-                      if (!ytResizeRef.current) return;
-                      const dx = (e.clientX - ytResizeRef.current.startX) / zoom;
-                      const dy = (e.clientY - ytResizeRef.current.startY) / zoom;
-                      setYtSize({
-                        w: Math.max(260, Math.min(900, Math.round(ytResizeRef.current.origW + dx))),
-                        h: Math.max(210, Math.min(680, Math.round(ytResizeRef.current.origH + dy))),
-                      });
-                    }}
-                    onPointerUp={() => {
-                      ytResizeRef.current = null;
-                    }}
-                    title="Drag to resize YouTube Player"
-                    className="absolute bottom-1 right-1 w-4 h-4 cursor-nwse-resize rounded-sm flex items-end justify-end p-0.5 text-[#8E8E93] hover:text-[#1C1C1E]"
+                    className="px-3.5 py-2.5 bg-[#A43850]/12 border-b border-[#E4E2DC] flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing select-none shrink-0"
                   >
-                    <svg className="w-2.5 h-2.5" viewBox="0 0 10 10" fill="currentColor">
-                      <path d="M9 1v8H1L9 1z" />
-                    </svg>
+                    <div className="flex items-center gap-2 text-xs font-bold text-[#1C1C1E] min-w-0">
+                      <Tv className="w-4 h-4 text-[#A43850] shrink-0" />
+                      <span className="truncate">
+                        {yt.title || `YouTube Session ${ytSessions.length > 1 ? idx + 1 : ''}`}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setYtPlaylistDrawerId((cur) => (cur === yt.id ? null : yt.id))}
+                        title="View Saved Playlists"
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 transition-colors ${
+                          showPlaylists
+                            ? 'bg-[#A43850] text-white'
+                            : 'text-[#52525B] hover:text-[#1C1C1E] hover:bg-black/5'
+                        }`}
+                      >
+                        <ListVideo className="w-3.5 h-3.5" />
+                        <span>Playlists</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => updateYtSession(yt.id, { minimized: !yt.minimized })}
+                        title={yt.minimized ? 'Expand Player' : 'Minimize Player'}
+                        className="p-1 rounded-lg text-[#52525B] hover:text-[#1C1C1E] hover:bg-black/5"
+                      >
+                        {yt.minimized ? (
+                          <Maximize2 className="w-3.5 h-3.5" />
+                        ) : (
+                          <Minimize2 className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeYtSession(yt.id)}
+                        title="Close YouTube Session"
+                        className="p-1 rounded-lg text-[#52525B] hover:text-red-600 hover:bg-black/5"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          )}
 
-          {/* Pinned Google Drive Files on Infinite Matrix */}
-          {drivePins.map((dpin) => (
-            <div
-              key={dpin.id}
-              onPointerDown={(e) => e.stopPropagation()}
-              style={{ left: dpin.x, top: dpin.y, width: dpin.w, height: dpin.h }}
-              className="absolute z-15 paper-card rounded-2xl shadow-xl border border-[#E4E2DC] overflow-hidden flex flex-col"
-            >
+                  {!yt.minimized && (
+                    <div className="p-3 flex flex-col gap-2.5 flex-1 min-h-0 relative">
+                      <form
+                        onSubmit={(e) => void handleMatrixYtSubmit(yt.id, yt.query, e)}
+                        className="flex gap-1.5 shrink-0"
+                      >
+                        <input
+                          type="text"
+                          value={yt.query}
+                          onChange={(e) => updateYtSession(yt.id, { query: e.target.value })}
+                          placeholder="Paste video/playlist URL or search..."
+                          className="flex-1 min-w-0 px-3 py-1.5 text-xs rounded-xl border border-[#E2E0D8] bg-white/85 focus:outline-none focus:border-[#A43850]"
+                        />
+                        <button
+                          type="submit"
+                          disabled={isSearching}
+                          className="ios-press px-3 py-1.5 rounded-xl bg-[#A43850] text-white text-xs font-semibold shrink-0"
+                        >
+                          {isSearching ? '...' : <Search className="w-3.5 h-3.5" />}
+                        </button>
+                      </form>
+
+                      {showPlaylists && (
+                        <div className="max-h-44 overflow-y-auto rounded-xl border border-[#E2E0D8] bg-white/80 p-2 space-y-2 shrink-0">
+                          {savedPlaylists.length === 0 ? (
+                            <div className="text-[11px] text-[#8E8E93] text-center py-2">
+                              No saved playlists yet. Create one in the YouTube tab!
+                            </div>
+                          ) : (
+                            savedPlaylists.map((pl) => (
+                              <div key={pl.id} className="space-y-1">
+                                <div className="text-[11px] font-bold text-[#A43850] flex items-center justify-between px-1">
+                                  <span>{pl.name}</span>
+                                  <span className="text-[10px] text-[#8E8E93]">{pl.videos.length} videos</span>
+                                </div>
+                                {pl.videos.map((v) => (
+                                  <button
+                                    key={v.videoId}
+                                    type="button"
+                                    onClick={() => {
+                                      updateYtSession(yt.id, {
+                                        videoId: v.videoId,
+                                        playlistId: undefined,
+                                        title: v.title,
+                                      });
+                                      setYtPlaylistDrawerId(null);
+                                    }}
+                                    className="w-full flex items-center gap-2 p-1 rounded-lg hover:bg-black/5 text-left"
+                                  >
+                                    <img
+                                      src={v.thumbnail}
+                                      alt=""
+                                      className="w-11 h-7 rounded object-cover shrink-0"
+                                    />
+                                    <span className="text-[11px] font-medium text-[#1C1C1E] truncate">
+                                      {v.title}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+
+                      {results.length > 0 && (
+                        <div className="max-h-40 overflow-y-auto space-y-1 pr-0.5 shrink-0">
+                          {results.map((item) => (
+                            <button
+                              key={item.videoId}
+                              type="button"
+                              onClick={() => {
+                                updateYtSession(yt.id, {
+                                  videoId: item.videoId,
+                                  playlistId: undefined,
+                                  title: item.title,
+                                });
+                                setYtResultsById((prev) => ({ ...prev, [yt.id]: [] }));
+                              }}
+                              className="w-full flex items-center gap-2 p-1.5 rounded-xl hover:bg-black/5 text-left"
+                            >
+                              <img
+                                src={item.thumbnail}
+                                alt=""
+                                className="w-12 h-8 rounded-md object-cover shrink-0"
+                              />
+                              <div className="min-w-0">
+                                <div className="text-[11px] font-semibold text-[#1C1C1E] line-clamp-1">
+                                  {item.title}
+                                </div>
+                                <div className="text-[10px] text-[#8E8E93] truncate">{item.channel}</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {embedSrc ? (
+                        <div className="w-full flex-1 min-h-[180px] rounded-xl overflow-hidden bg-black">
+                          <iframe
+                            src={embedSrc}
+                            title={yt.title || 'Study Matrix YouTube Player'}
+                            className="w-full h-full border-0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex-1 flex items-center justify-center p-4 text-center text-xs text-[#8E8E93] border border-dashed border-[#D6D3CB] rounded-xl">
+                          Search a topic, paste a YouTube video/playlist link, or pick from Playlists above.
+                        </div>
+                      )}
+
+                      {/* Bottom-Right Resize Handle */}
+                      <div
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          const startX = e.clientX;
+                          const startY = e.clientY;
+                          const origW = yt.w;
+                          const origH = yt.h;
+                          const onMove = (ev: PointerEvent) => {
+                            const dx = (ev.clientX - startX) / zoomRef.current;
+                            const dy = (ev.clientY - startY) / zoomRef.current;
+                            updateYtSession(yt.id, {
+                              w: Math.max(340, Math.min(1100, Math.round(origW + dx))),
+                              h: Math.max(260, Math.min(820, Math.round(origH + dy))),
+                            });
+                          };
+                          const onUp = () => {
+                            window.removeEventListener('pointermove', onMove);
+                            window.removeEventListener('pointerup', onUp);
+                          };
+                          window.addEventListener('pointermove', onMove);
+                          window.addEventListener('pointerup', onUp);
+                        }}
+                        title="Drag to resize YouTube Player"
+                        className="absolute bottom-1 right-1 w-4 h-4 cursor-nwse-resize rounded-sm flex items-end justify-end p-0.5 text-[#8E8E93] hover:text-[#1C1C1E]"
+                      >
+                        <svg className="w-2.5 h-2.5" viewBox="0 0 10 10" fill="currentColor">
+                          <path d="M9 1v8H1L9 1z" />
+                        </svg>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Pinned Google Drive Files on Infinite Matrix (connectable with arrows) */}
+          {drivePins.map((dpin) => {
+            const dCardId = `drive_${dpin.id}`;
+            const dActiveSide = connectFrom?.cardId === dCardId ? connectFrom.side : null;
+            return (
+              <div
+                key={dpin.id}
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{ left: dpin.x, top: dpin.y, width: dpin.w, height: dpin.h }}
+                className={`absolute z-15 overflow-visible ${
+                  dActiveSide ? 'ring-2 ring-[#0A5386]/70 rounded-2xl' : ''
+                }`}
+              >
+                <AnchorDots
+                  visible={connectMode}
+                  activeSide={dActiveSide}
+                  onSelectSide={(side) => handleSelectAnchor(dCardId, side)}
+                />
+                <div className="w-full h-full paper-card rounded-2xl shadow-xl border border-[#E4E2DC] overflow-hidden flex flex-col">
               <div
                 onPointerDown={(e) => {
                   if ((e.target as HTMLElement).closest('button,a')) return;
@@ -2831,7 +3229,7 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
                 </div>
               </div>
 
-              <div className="relative flex-1 bg-white">
+              <div className="relative flex-1 bg-white rounded-b-2xl overflow-hidden">
                 <iframe
                   src={getDriveEmbedUrl(dpin.file)}
                   title={dpin.file.name}
@@ -2876,7 +3274,9 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
                 </div>
               </div>
             </div>
-          ))}
+          </div>
+          );
+          })}
 
           {/* Resizable Discussion Zones (z-0, behind pins) */}
           {zones.map((zone) => {
@@ -2909,8 +3309,11 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
                   <input
                     type="text"
                     value={zone.title}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
                     onChange={(e) => updateZone(zone.id, { title: e.target.value })}
-                    className="text-xs font-bold bg-transparent focus:outline-none w-full"
+                    placeholder="Zone name..."
+                    className="text-xs font-bold bg-transparent focus:outline-none w-full select-text cursor-text"
                     style={{ color: zone.color, backgroundColor: 'transparent' }}
                   />
                   <button

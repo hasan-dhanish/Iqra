@@ -26,6 +26,7 @@ interface SearchResultItem {
   channelId?: string;
   thumbnail: string;
   durationText: string;
+  listId?: string;
 }
 
 interface KeyMoment {
@@ -138,6 +139,7 @@ async function searchYouTubePublic(query: string): Promise<SearchResultItem[]> {
 
 export interface YoutubeActiveVideo {
   videoId: string;
+  listId?: string;
   title: string;
   channel: string;
   thumbnail: string;
@@ -327,12 +329,15 @@ export const YoutubeView: React.FC<YoutubeViewProps> = ({
     setSearchError('');
 
     const directUrl = parseYouTubeUrl(trimmed);
-    if (directUrl?.videoId) {
+    if (directUrl && (directUrl.videoId || directUrl.listId)) {
       playVideo({
-        videoId: directUrl.videoId,
-        title: 'YouTube Video',
+        videoId: directUrl.videoId || '',
+        listId: directUrl.listId,
+        title: directUrl.listId ? 'YouTube Playlist' : 'YouTube Video',
         channel: 'YouTube',
-        thumbnail: `https://i.ytimg.com/vi/${directUrl.videoId}/hqdefault.jpg`,
+        thumbnail: directUrl.videoId
+          ? `https://i.ytimg.com/vi/${directUrl.videoId}/hqdefault.jpg`
+          : '',
         durationText: '',
       });
       return;
@@ -465,11 +470,23 @@ export const YoutubeView: React.FC<YoutubeViewProps> = ({
       : results;
 
   const embedSrc = currentVideo
-    ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(
-        currentVideo.videoId
-      )}?autoplay=1&enablejsapi=1${
-        typeof window !== 'undefined' ? `&origin=${encodeURIComponent(window.location.origin)}` : ''
-      }${seekSeconds > 0 ? `&start=${seekSeconds}` : ''}&t=${embedNonce}`
+    ? currentVideo.listId
+      ? currentVideo.videoId
+        ? `https://www.youtube-nocookie.com/embed/${encodeURIComponent(
+            currentVideo.videoId
+          )}?list=${encodeURIComponent(currentVideo.listId)}&autoplay=1&enablejsapi=1${
+            typeof window !== 'undefined' ? `&origin=${encodeURIComponent(window.location.origin)}` : ''
+          }${seekSeconds > 0 ? `&start=${seekSeconds}` : ''}&t=${embedNonce}`
+        : `https://www.youtube-nocookie.com/embed/videoseries?list=${encodeURIComponent(
+            currentVideo.listId
+          )}&autoplay=1&enablejsapi=1${
+            typeof window !== 'undefined' ? `&origin=${encodeURIComponent(window.location.origin)}` : ''
+          }&t=${embedNonce}`
+      : `https://www.youtube-nocookie.com/embed/${encodeURIComponent(
+          currentVideo.videoId
+        )}?autoplay=1&enablejsapi=1${
+          typeof window !== 'undefined' ? `&origin=${encodeURIComponent(window.location.origin)}` : ''
+        }${seekSeconds > 0 ? `&start=${seekSeconds}` : ''}&t=${embedNonce}`
     : '';
 
   return (
@@ -819,12 +836,52 @@ export const YoutubeView: React.FC<YoutubeViewProps> = ({
               </div>
             )}
 
-            {/* Side Tab 3: Up Next */}
+            {/* Side Tab 3: Up Next & Playlists */}
             {sideTab === 'upnext' && (
-              <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+              <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                {playlists.length > 0 && (
+                  <div className="space-y-1.5 pb-2 border-b border-[#E2E0D8]">
+                    <div className="text-[11px] font-bold text-[#1C1C1E] px-1 flex items-center justify-between">
+                      <span>Saved Playlists</span>
+                      <span className="text-[10px] text-[#8E8E93]">{playlists.length}</span>
+                    </div>
+                    {playlists.map((pl) => (
+                      <div key={pl.id} className="rounded-xl bg-black/[0.03] p-2 space-y-1">
+                        <div className="text-[11px] font-bold text-[#9B5B76] flex items-center justify-between">
+                          <span className="truncate">{pl.name}</span>
+                          <span className="text-[10px] text-[#8E8E93] shrink-0">
+                            {pl.videos.length}
+                          </span>
+                        </div>
+                        {pl.videos.map((v) => (
+                          <button
+                            key={v.videoId}
+                            type="button"
+                            onClick={() => playVideo(v)}
+                            className={`w-full flex items-center gap-2 p-1 rounded-lg text-left transition-colors ${
+                              currentVideo.videoId === v.videoId
+                                ? 'bg-[#9B5B76]/15 text-[#9B5B76]'
+                                : 'hover:bg-black/5'
+                            }`}
+                          >
+                            <img
+                              src={v.thumbnail}
+                              alt=""
+                              className="w-12 h-8 rounded object-cover shrink-0"
+                            />
+                            <span className="text-[11px] font-semibold text-[#1C1C1E] truncate">
+                              {v.title}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {results.length === 0 ? (
-                  <div className="py-8 text-center text-xs text-[#8E8E93]">
-                    Search for videos to see results here.
+                  <div className="py-6 text-center text-xs text-[#8E8E93]">
+                    Search for videos to see Up Next results here.
                   </div>
                 ) : (
                   results.map((item) => (

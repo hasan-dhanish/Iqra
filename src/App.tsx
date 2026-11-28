@@ -30,7 +30,7 @@ const DEFAULT_MATRIX_PROJECT: Project = {
   deadline: '',
   quotedAmountInr: 0,
   budgetNotes: '',
-  createdBy: 'Sajitha',
+  createdBy: 'Shajitha',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
@@ -51,6 +51,7 @@ const WorkspaceShell: React.FC = () => {
   const [timerMode, setTimerMode] = useState<'countdown' | 'pomodoro' | 'stopwatch'>('countdown');
   const [pomoPhase, setPomoPhase] = useState<'focus' | 'shortBreak' | 'longBreak'>('focus');
   const [customMins, setCustomMins] = useState(45);
+  const [extraPomoSeconds, setExtraPomoSeconds] = useState(0);
   const [countdownLeft, setCountdownLeft] = useState(45 * 60);
   const [stopwatchElapsed, setStopwatchElapsed] = useState(0);
   const [timerRunning, setTimerRunning] = useState(false);
@@ -87,6 +88,7 @@ const WorkspaceShell: React.FC = () => {
     setTimerRunning(false);
     setMidpointAcked(false);
     setVictoryDismissed(false);
+    setExtraPomoSeconds(0);
     setPomoPhase(phase);
     setCountdownLeft(pomoPhaseMins(phase) * 60);
   };
@@ -113,15 +115,29 @@ const WorkspaceShell: React.FC = () => {
     setTimerRunning(false);
     setMidpointAcked(false);
     setVictoryDismissed(false);
+    setExtraPomoSeconds(0);
     setTimerMode('countdown');
     setCustomMins(mins);
     setCountdownLeft(mins * 60);
+  };
+
+  const handleAddTimerMinutes = (mins: number) => {
+    if (timerMode === 'stopwatch') return;
+    setVictoryDismissed(false);
+    if (timerMode === 'countdown') {
+      setCustomMins((prev) => Math.min(300, prev + mins));
+      setCountdownLeft((prev) => prev + mins * 60);
+    } else if (timerMode === 'pomodoro') {
+      setExtraPomoSeconds((prev) => prev + mins * 60);
+      setCountdownLeft((prev) => prev + mins * 60);
+    }
   };
 
   const handleResetTimer = (keepFloating = false) => {
     setTimerRunning(false);
     setMidpointAcked(false);
     setVictoryDismissed(false);
+    setExtraPomoSeconds(0);
     if (keepFloating) setFloatingPinned(true);
     if (timerMode === 'countdown') setCountdownLeft(customMins * 60);
     else if (timerMode === 'pomodoro') setCountdownLeft(pomoPhaseMins(pomoPhase) * 60);
@@ -130,7 +146,9 @@ const WorkspaceShell: React.FC = () => {
 
   const handleSaveSession = () => {
     const targetSecs =
-      timerMode === 'pomodoro' ? pomoPhaseMins(pomoPhase) * 60 : customMins * 60;
+      timerMode === 'pomodoro'
+        ? pomoPhaseMins(pomoPhase) * 60 + extraPomoSeconds
+        : customMins * 60;
     const studiedSecs =
       timerMode === 'stopwatch'
         ? stopwatchElapsed
@@ -207,7 +225,9 @@ const WorkspaceShell: React.FC = () => {
   };
 
   const targetMinsForProgress =
-    timerMode === 'pomodoro' ? pomoPhaseMins(pomoPhase) : customMins;
+    timerMode === 'pomodoro'
+      ? pomoPhaseMins(pomoPhase) + extraPomoSeconds / 60
+      : customMins;
   const hasTimerProgress =
     timerMode === 'countdown' || timerMode === 'pomodoro'
       ? countdownLeft < targetMinsForProgress * 60
@@ -332,6 +352,7 @@ const WorkspaceShell: React.FC = () => {
               onMidpointAck={() => setMidpointAcked(true)}
               victoryDismissed={victoryDismissed}
               onVictoryDismiss={() => setVictoryDismissed(true)}
+              onAddMinutes={timerMode !== 'stopwatch' ? handleAddTimerMinutes : undefined}
             />
           )}
 
@@ -410,6 +431,7 @@ const WorkspaceShell: React.FC = () => {
           onMidpointAck={() => setMidpointAcked(true)}
           victoryDismissed={victoryDismissed}
           onVictoryDismiss={() => setVictoryDismissed(true)}
+          onAddMinutes={timerMode !== 'stopwatch' ? handleAddTimerMinutes : undefined}
         />
       )}
 

@@ -339,7 +339,7 @@ export const LdoiProvider: React.FC<{ children: React.ReactNode }> = ({ children
     supabase.auth.getSession().then(({ data }) => {
       const user = data.session?.user;
       if (user?.email) {
-        const name = (user.user_metadata?.member_name as MemberName) || 'Sajitha';
+        const name = (user.user_metadata?.member_name as MemberName) || 'Shajitha';
         setCurrentUser({ email: user.email, name });
       }
       setAuthLoading(false);
@@ -348,7 +348,7 @@ export const LdoiProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       const user = session?.user;
       if (user?.email) {
-        const name = (user.user_metadata?.member_name as MemberName) || 'Sajitha';
+        const name = (user.user_metadata?.member_name as MemberName) || 'Shajitha';
         setCurrentUser({ email: user.email, name });
       } else {
         setCurrentUser(null);
@@ -618,7 +618,7 @@ export const LdoiProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ...input,
         id: uid('proj'),
         liveNotebookText: '',
-        createdBy: currentUser?.name ?? 'Sajitha',
+        createdBy: currentUser?.name ?? 'Shajitha',
         createdAt: now,
         updatedAt: now,
       };
@@ -743,7 +743,7 @@ export const LdoiProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const note: ProjectNote = {
         id: uid('note'),
         projectId,
-        author: currentUser?.name ?? 'Sajitha',
+        author: currentUser?.name ?? 'Shajitha',
         content,
         createdAt: new Date().toISOString(),
       };
@@ -790,7 +790,7 @@ export const LdoiProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Expenses
   const addExpense = useCallback(
     async (input: Omit<ExpenseItem, 'id' | 'addedBy'>) => {
-      const exp: ExpenseItem = { ...input, id: uid('exp'), addedBy: currentUser?.name ?? 'Sajitha' };
+      const exp: ExpenseItem = { ...input, id: uid('exp'), addedBy: currentUser?.name ?? 'Shajitha' };
       if (syncMode === 'supabase' && supabase) {
         await supabase.from('expenses').insert({
           id: exp.id,
@@ -824,7 +824,7 @@ export const LdoiProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const doc: QuotationDoc = {
         ...input,
         id: existing?.id ?? uid('quot'),
-        createdBy: existing?.createdBy ?? currentUser?.name ?? 'Sajitha',
+        createdBy: existing?.createdBy ?? currentUser?.name ?? 'Shajitha',
         createdAt: existing?.createdAt ?? new Date().toISOString(),
       };
       if (syncMode === 'supabase' && supabase) {
@@ -894,7 +894,7 @@ export const LdoiProvider: React.FC<{ children: React.ReactNode }> = ({ children
         fileSize: file.size,
         mimeType: file.type,
         url,
-        uploadedBy: currentUser?.name ?? 'Sajitha',
+        uploadedBy: currentUser?.name ?? 'Shajitha',
         createdAt: new Date().toISOString(),
       };
 
@@ -943,7 +943,7 @@ export const LdoiProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const enq: Enquiry = {
         ...input,
         id: uid('enq'),
-        createdBy: currentUser?.name ?? 'Sajitha',
+        createdBy: currentUser?.name ?? 'Shajitha',
         createdAt: new Date().toISOString(),
       };
       if (syncMode === 'supabase' && supabase) {
@@ -1028,7 +1028,7 @@ export const LdoiProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const entry: JournalEntry = {
         ...input,
         id: uid('jour'),
-        author: currentUser?.name ?? 'Sajitha',
+        author: currentUser?.name ?? 'Shajitha',
         createdAt: now,
         updatedAt: now,
       };
@@ -1234,7 +1234,7 @@ export const LdoiProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const item: ResourceItem = {
         ...input,
         id: uid('res'),
-        addedBy: currentUser?.name ?? 'Sajitha',
+        addedBy: currentUser?.name ?? 'Shajitha',
         createdAt: new Date().toISOString(),
       };
       commitLocalState((prev) => ({

@@ -8,10 +8,15 @@ import {
   BookOpen,
   Calculator,
   CheckSquare,
+  ChevronDown,
+  Download,
+  Eraser,
   Highlighter,
+  ImagePlus,
   Italic,
   List,
   ListOrdered,
+  PenTool,
   Plus,
   Search,
   Strikethrough,
@@ -81,6 +86,29 @@ export const JournalView: React.FC = () => {
   const [autoMath, setAutoMath] = useState(() => isAutoMathEnabled());
   const editorRef = useRef<HTMLDivElement | null>(null);
   const savedRangeRef = useRef<Range | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Stylus Drawing Overlay State (persisted per page)
+  const [drawMode, setDrawMode] = useState(false);
+  const [eraserMode, setEraserMode] = useState(false);
+  const [penColor, setPenColor] = useState('#18181B');
+  const [penWidth, setPenWidth] = useState(2.5);
+  const drawCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const isDrawingRef = useRef(false);
+  const lastDrawPtRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Page Extra Height (persisted per page via downward expand arrow)
+  const [pageExtraHeights, setPageExtraHeights] = useState<Record<string, number>>(() => {
+    try {
+      const raw = localStorage.getItem('ldoi_notebook_heights_v1');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Export Menu State
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const [deleteBookTarget, setDeleteBookTarget] = useState<{
     name: string;
     pageIds: string[];
@@ -365,6 +393,256 @@ export const JournalView: React.FC = () => {
     saveSelection();
     if (editorRef.current) {
       handleContentChange(editorRef.current.innerHTML);
+    }
+  };
+
+  // --- Notebook Image Upload / Paste / Drop ---
+  const insertImageFile = (file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      if (!dataUrl) return;
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 1100;
+        let finalUrl = dataUrl;
+        if (img.width > maxW) {
+          const scale = maxW / img.width;
+          const c = document.createElement('canvas');
+          c.width = maxW;
+          c.height = Math.round(img.height * scale);
+          const ctx = c.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, c.width, c.height);
+            finalUrl = c.toDataURL('image/jpeg', 0.88);
+          }
+        }
+        const editor = editorRef.current;
+        if (!editor) return;
+        editor.focus();
+        const sel = window.getSelection();
+        if (savedRangeRef.current && sel && editor.contains(savedRangeRef.current.startContainer)) {
+          sel.removeAllRanges();
+          sel.addRange(savedRangeRef.current);
+        }
+        const el = document.createElement('img');
+        el.src = finalUrl;
+        el.alt = file.name || 'Notebook image';
+        el.className = 'max-w-full rounded-lg my-2 shadow-sm block';
+        if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
+          const range = sel.getRangeAt(0);
+          range.deleteContents();
+          range.insertNode(el);
+          range.setStartAfter(el);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        } else {
+          editor.appendChild(el);
+        }
+        saveSelection();
+        handleContentChange(editor.innerHTML);
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // --- Notebook Page Height Expansion ---
+  const activeExtraHeight = activeEntry ? pageExtraHeights[activeEntry.id] ?? 0 : 0;
+  const expandPageHeight = () => {
+    if (!activeEntry) return;
+    setPageExtraHeights((prev) => {
+      const next = { ...prev, [activeEntry.id]: (prev[activeEntry.id] ?? 0) + 240 };
+      try {
+        localStorage.setItem('ldoi_notebook_heights_v1', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
+  // --- Stylus Drawing Canvas Persistence ---
+  const saveDrawingForPage = (pageId: string) => {
+    const canvas = drawCanvasRef.current;
+    if (!canvas) return;
+    try {
+      const raw = localStorage.getItem('ldoi_notebook_drawings_v1');
+      const map: Record<string, string> = raw ? JSON.parse(raw) : {};
+      map[pageId] = canvas.toDataURL('image/png');
+      localStorage.setItem('ldoi_notebook_drawings_v1', JSON.stringify(map));
+    } catch {
+      // ignore storage quota
+    }
+  };
+
+  const clearDrawingForPage = () => {
+    const canvas = drawCanvasRef.current;
+    if (!canvas || !activeEntry) return;
+    const ctx = canvas.getContext('2d');
+    ctx?.clearRect(0, 0, canvas.width, canvas.height);
+    try {
+      const raw = localStorage.getItem('ldoi_notebook_drawings_v1');
+      const map: Record<string, string> = raw ? JSON.parse(raw) : {};
+      delete map[activeEntry.id];
+      localStorage.setItem('ldoi_notebook_drawings_v1', JSON.stringify(map));
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    const canvas = drawCanvasRef.current;
+    const editor = editorRef.current;
+    if (!canvas || !editor || !activeEntry) return;
+
+    const targetW = Math.max(300, editor.clientWidth);
+    const targetH = Math.max(320 + activeExtraHeight, editor.scrollHeight, editor.clientHeight);
+    const prevSnapshot = canvas.width > 0 && canvas.height > 0 ? canvas.toDataURL('image/png') : null;
+    const prevPageId = canvas.dataset.pageId;
+
+    canvas.width = targetW;
+    canvas.height = targetH;
+    canvas.dataset.pageId = activeEntry.id;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, targetW, targetH);
+
+    if (prevPageId === activeEntry.id && prevSnapshot) {
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0);
+      img.src = prevSnapshot;
+    } else {
+      try {
+        const raw = localStorage.getItem('ldoi_notebook_drawings_v1');
+        const map: Record<string, string> = raw ? JSON.parse(raw) : {};
+        const saved = map[activeEntry.id];
+        if (saved) {
+          const img = new Image();
+          img.onload = () => ctx.drawImage(img, 0, 0);
+          img.src = saved;
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }, [activeEntry?.id, activeExtraHeight]);
+
+  // --- Export Notes (PDF, PNG Image, Markdown, HTML) ---
+  const exportNoteAs = (format: 'pdf' | 'png' | 'md' | 'html') => {
+    if (!activeEntry) return;
+    setShowExportMenu(false);
+    const title = activeEntry.title.trim() || 'Untitled Note';
+    const safeName = title.replace(/[^a-z0-9\-_]+/gi, '_').slice(0, 60) || 'note';
+    const htmlBody = editorRef.current?.innerHTML ?? activeEntry.content ?? '';
+    const drawingUrl = drawCanvasRef.current?.toDataURL('image/png') ?? '';
+
+    if (format === 'html') {
+      const doc = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:system-ui,-apple-system,sans-serif;max-width:780px;margin:40px auto;padding:24px;color:#18181B;background:#FCFBF8;line-height:1.7;}img{max-width:100%;border-radius:8px;}.sheet{position:relative;}.ink{position:absolute;inset:0;width:100%;pointer-events:none;}</style></head><body><h1>${title}</h1><div class="sheet">${htmlBody}${drawingUrl ? `<img class="ink" src="${drawingUrl}" alt="Stylus ink" />` : ''}</div></body></html>`;
+      const blob = new Blob([doc], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeName}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    if (format === 'md') {
+      const tmp = document.createElement('div');
+      tmp.innerHTML = htmlBody;
+      const text = (tmp.innerText || tmp.textContent || '').trim();
+      const md = `# ${title}\n\n${text}\n`;
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${safeName}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    if (format === 'pdf') {
+      const win = window.open('', '_blank', 'width=900,height=700');
+      if (!win) return;
+      win.document.write(`<!doctype html><html><head><title>${title}</title><style>@page{margin:16mm;}body{font-family:system-ui,-apple-system,sans-serif;color:#18181B;line-height:1.7;}h1{font-size:22px;margin-bottom:12px;border-bottom:1px solid #E4E2DC;padding-bottom:8px;}img{max-width:100%;border-radius:8px;}.sheet{position:relative;}.ink{position:absolute;inset:0;width:100%;pointer-events:none;}</style></head><body><h1>${title}</h1><div class="sheet">${htmlBody}${drawingUrl ? `<img class="ink" src="${drawingUrl}" alt="" />` : ''}</div><script>window.onload=()=>{setTimeout(()=>{window.print();},250);};</script></body></html>`);
+      win.document.close();
+      return;
+    }
+
+    // PNG Image export
+    const canvas = document.createElement('canvas');
+    const w = 1200;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = htmlBody;
+    const rawLines = (tmp.innerText || '').split('\n');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const wrappedLines: string[] = [];
+    ctx.font = '22px system-ui, -apple-system, sans-serif';
+    for (const line of rawLines) {
+      const words = line.split(' ');
+      let cur = '';
+      for (const word of words) {
+        const test = cur ? `${cur} ${word}` : word;
+        if (ctx.measureText(test).width > w - 120) {
+          if (cur) wrappedLines.push(cur);
+          cur = word;
+        } else {
+          cur = test;
+        }
+      }
+      wrappedLines.push(cur);
+    }
+
+    const h = Math.max(820, 180 + wrappedLines.length * 36);
+    canvas.width = w;
+    canvas.height = h;
+    ctx.fillStyle = '#FCFBF8';
+    ctx.fillRect(0, 0, w, h);
+
+    // Ruled lines
+    ctx.strokeStyle = 'rgba(10, 83, 134, 0.14)';
+    ctx.lineWidth = 1;
+    for (let y = 132; y < h - 40; y += 36) {
+      ctx.beginPath();
+      ctx.moveTo(48, y);
+      ctx.lineTo(w - 48, y);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = '#18181B';
+    ctx.font = 'bold 34px system-ui, -apple-system, sans-serif';
+    ctx.fillText(title, 60, 82);
+
+    ctx.font = '22px system-ui, -apple-system, sans-serif';
+    wrappedLines.forEach((ln, idx) => {
+      ctx.fillText(ln, 60, 126 + idx * 36);
+    });
+
+    const finalizePng = () => {
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = `${safeName}.png`;
+      a.click();
+    };
+
+    if (drawingUrl) {
+      const inkImg = new Image();
+      inkImg.onload = () => {
+        ctx.drawImage(inkImg, 48, 100, w - 96, Math.min(h - 120, (inkImg.height / Math.max(1, inkImg.width)) * (w - 96)));
+        finalizePng();
+      };
+      inkImg.onerror = finalizePng;
+      inkImg.src = drawingUrl;
+    } else {
+      finalizePng();
     }
   };
 
@@ -909,6 +1187,53 @@ export const JournalView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2">
+          {activeEntry && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowExportMenu((v) => !v)}
+                className="ios-press inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-white border border-[#E4E2DC] hover:border-[#0A5386] text-[#18181B] rounded-lg"
+                title="Export Note"
+              >
+                <Download className="w-3.5 h-3.5" /> Export
+              </button>
+              {showExportMenu && (
+                <div
+                  onMouseLeave={() => setShowExportMenu(false)}
+                  className="absolute right-0 mt-1.5 w-44 rounded-xl bg-white dark:bg-[#1C1C1E] border border-[#E4E2DC] dark:border-white/15 shadow-xl py-1.5 z-40 text-xs"
+                >
+                  <button
+                    type="button"
+                    onClick={() => exportNoteAs('pdf')}
+                    className="w-full text-left px-3 py-1.5 hover:bg-black/5 dark:hover:bg-white/10 font-medium"
+                  >
+                    Export as PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => exportNoteAs('png')}
+                    className="w-full text-left px-3 py-1.5 hover:bg-black/5 dark:hover:bg-white/10 font-medium"
+                  >
+                    Export as PNG Image
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => exportNoteAs('md')}
+                    className="w-full text-left px-3 py-1.5 hover:bg-black/5 dark:hover:bg-white/10 font-medium"
+                  >
+                    Export as Markdown (.md)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => exportNoteAs('html')}
+                    className="w-full text-left px-3 py-1.5 hover:bg-black/5 dark:hover:bg-white/10 font-medium"
+                  >
+                    Export as HTML
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           <button
             type="button"
             onClick={() =>
@@ -1317,24 +1642,204 @@ export const JournalView: React.FC = () => {
                       />
                     </label>
                   </div>
+
+                  {/* Upload / Import Image & Stylus Drawing Controls */}
+                  <div className="flex items-center gap-1 pl-1.5 border-l border-[#E4E2DC]">
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files ?? []);
+                        files.forEach(insertImageFile);
+                        e.target.value = '';
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onMouseDown={saveSelection}
+                      onClick={() => imageInputRef.current?.click()}
+                      title="Import / Upload Image to Page"
+                      className="notebook-tool-btn p-1.5 rounded-full"
+                    >
+                      <ImagePlus className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDrawMode((d) => !d);
+                        setEraserMode(false);
+                      }}
+                      title={drawMode ? 'Switch back to typing' : 'Stylus / Pen Drawing Mode'}
+                      className={`p-1.5 rounded-full transition-colors ${
+                        drawMode
+                          ? 'bg-[#0A5386] text-white'
+                          : 'notebook-tool-btn'
+                      }`}
+                    >
+                      <PenTool className="w-3.5 h-3.5" />
+                    </button>
+
+                    {drawMode && (
+                      <>
+                        {['#18181B', '#0A5386', '#DC2626', '#16A34A'].map((ink) => (
+                          <button
+                            key={ink}
+                            type="button"
+                            onClick={() => {
+                              setPenColor(ink);
+                              setEraserMode(false);
+                            }}
+                            title={`Stylus Ink ${ink}`}
+                            style={{ backgroundColor: ink }}
+                            className={`w-3.5 h-3.5 rounded-full border border-white/40 ${
+                              !eraserMode && penColor === ink ? 'ring-2 ring-offset-1 ring-[#0A5386]' : ''
+                            }`}
+                          />
+                        ))}
+                        <select
+                          value={penWidth}
+                          onChange={(e) => setPenWidth(Number(e.target.value))}
+                          title="Stylus Stroke Size"
+                          className="text-[10px] font-bold bg-white/80 dark:bg-white/10 rounded px-1 py-0.5 border border-[#E4E2DC]"
+                        >
+                          <option value={1.5}>Fine</option>
+                          <option value={2.5}>Med</option>
+                          <option value={5}>Bold</option>
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => setEraserMode((e) => !e)}
+                          title="Eraser"
+                          className={`p-1.5 rounded-full ${
+                            eraserMode ? 'bg-amber-500 text-white' : 'notebook-tool-btn'
+                          }`}
+                        >
+                          <Eraser className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={clearDrawingForPage}
+                          title="Clear Stylus Ink"
+                          className="notebook-tool-btn px-2 py-0.5 rounded-full text-[10px] font-bold text-red-600"
+                        >
+                          Clear
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                {/* Ruled Rich-Text Writing Area */}
-                <div
-                  ref={editorRef}
-                  contentEditable
-                  suppressContentEditableWarning
-                  onMouseUp={saveSelection}
-                  onKeyUp={saveSelection}
-                  onKeyDown={handleEditorKeyDown}
-                  onClick={handleEditorClick}
-                  onInput={(e) => {
-                    saveSelection();
-                    handleContentChange(e.currentTarget.innerHTML);
-                  }}
-                  data-placeholder="Write down your thoughts, technical findings, or notes..."
-                  className="notebook-editor w-full flex-1 min-h-[320px] p-3 text-sm text-[#18181B] ruled-paper border border-[#E4E2DC] rounded-lg focus:outline-none focus:border-[#0A5386] overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-[#A1A1AA]"
-                />
+                {/* Ruled Rich-Text Writing Area + Stylus Canvas Overlay */}
+                <div className="relative flex-1 flex flex-col">
+                  <div
+                    ref={editorRef}
+                    contentEditable={!drawMode}
+                    suppressContentEditableWarning
+                    onMouseUp={saveSelection}
+                    onKeyUp={saveSelection}
+                    onKeyDown={handleEditorKeyDown}
+                    onClick={handleEditorClick}
+                    onPaste={(e) => {
+                      const files = Array.from(e.clipboardData?.files ?? []).filter((f) =>
+                        f.type.startsWith('image/')
+                      );
+                      if (files.length > 0) {
+                        e.preventDefault();
+                        files.forEach(insertImageFile);
+                      }
+                    }}
+                    onDrop={(e) => {
+                      const files = Array.from(e.dataTransfer?.files ?? []).filter((f) =>
+                        f.type.startsWith('image/')
+                      );
+                      if (files.length > 0) {
+                        e.preventDefault();
+                        files.forEach(insertImageFile);
+                      }
+                    }}
+                    onInput={(e) => {
+                      saveSelection();
+                      handleContentChange(e.currentTarget.innerHTML);
+                    }}
+                    style={{ minHeight: `${320 + activeExtraHeight}px` }}
+                    data-placeholder="Write down your thoughts, technical findings, or notes..."
+                    className="notebook-editor w-full flex-1 p-3 text-sm text-[#18181B] ruled-paper border border-[#E4E2DC] rounded-lg focus:outline-none focus:border-[#0A5386] overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-[#A1A1AA]"
+                  />
+
+                  <canvas
+                    ref={drawCanvasRef}
+                    onPointerDown={(e) => {
+                      if (!drawMode || !drawCanvasRef.current) return;
+                      e.currentTarget.setPointerCapture(e.pointerId);
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const pt = {
+                        x: ((e.clientX - rect.left) / rect.width) * e.currentTarget.width,
+                        y: ((e.clientY - rect.top) / rect.height) * e.currentTarget.height,
+                      };
+                      isDrawingRef.current = true;
+                      lastDrawPtRef.current = pt;
+                    }}
+                    onPointerMove={(e) => {
+                      if (!drawMode || !isDrawingRef.current || !drawCanvasRef.current || !lastDrawPtRef.current) return;
+                      const canvas = drawCanvasRef.current;
+                      const ctx = canvas.getContext('2d');
+                      if (!ctx) return;
+                      const rect = canvas.getBoundingClientRect();
+                      const pt = {
+                        x: ((e.clientX - rect.left) / rect.width) * canvas.width,
+                        y: ((e.clientY - rect.top) / rect.height) * canvas.height,
+                      };
+                      ctx.save();
+                      ctx.lineCap = 'round';
+                      ctx.lineJoin = 'round';
+                      const pressure = e.pressure && e.pressure > 0 ? e.pressure * 1.4 : 1;
+                      if (eraserMode) {
+                        ctx.globalCompositeOperation = 'destination-out';
+                        ctx.lineWidth = penWidth * 5;
+                      } else {
+                        ctx.globalCompositeOperation = 'source-over';
+                        ctx.strokeStyle = penColor;
+                        ctx.lineWidth = Math.max(1, penWidth * pressure);
+                      }
+                      ctx.beginPath();
+                      ctx.moveTo(lastDrawPtRef.current.x, lastDrawPtRef.current.y);
+                      ctx.lineTo(pt.x, pt.y);
+                      ctx.stroke();
+                      ctx.restore();
+                      lastDrawPtRef.current = pt;
+                    }}
+                    onPointerUp={() => {
+                      if (!isDrawingRef.current) return;
+                      isDrawingRef.current = false;
+                      lastDrawPtRef.current = null;
+                      if (activeEntry) saveDrawingForPage(activeEntry.id);
+                    }}
+                    onPointerCancel={() => {
+                      isDrawingRef.current = false;
+                      lastDrawPtRef.current = null;
+                    }}
+                    className={`absolute inset-0 w-full h-full rounded-lg z-10 ${
+                      drawMode ? 'pointer-events-auto touch-none cursor-crosshair' : 'pointer-events-none'
+                    }`}
+                  />
+                </div>
+
+                {/* Small Downward Arrow Under the Page to Add More Page Size */}
+                <div className="flex justify-center pt-1.5">
+                  <button
+                    type="button"
+                    onClick={expandPageHeight}
+                    title="Add more space to this page"
+                    className="ios-press inline-flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-semibold text-[#6E6E73] hover:text-[#18181B] dark:text-zinc-400 dark:hover:text-white bg-black/5 hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/15 transition-colors"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                    <span>Extend Page</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>

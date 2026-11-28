@@ -2,9 +2,9 @@ import type { MemberName, ProjectCategory, TeamMember } from './types';
 
 export const TEAM_MEMBERS: TeamMember[] = [
   {
-    name: 'Sajitha',
+    name: 'Shajitha',
     initials: 'SJ',
-    defaultEmailHint: 'sajitha@...',
+    defaultEmailHint: 'Shajitha@...',
     accentHex: '#0A5386',
   },
   {
@@ -19,7 +19,7 @@ export function getMemberColor(name: MemberName): string {
   return TEAM_MEMBERS.find((m) => m.name === name)?.accentHex ?? '#0A5386';
 }
 
-export const MEMBER_NAMES: MemberName[] = ['Sajitha', 'Dhani'];
+export const MEMBER_NAMES: MemberName[] = ['Shajitha', 'Dhani'];
 
 export const PROJECT_CATEGORIES: ProjectCategory[] = [
   'Core',

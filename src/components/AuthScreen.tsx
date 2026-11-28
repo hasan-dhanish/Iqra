@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowRight, CheckCircle2, Lock, Moon, Sun } from 'lucide-react';
-import { TEAM_MEMBERS } from '../constants';
 import { useLdoi } from '../context/LdoiContext';
-import type { MemberName } from '../types';
 import { LdoiLogo } from './LdoiLogo';
 
 interface AuthScreenProps {
@@ -11,21 +9,19 @@ interface AuthScreenProps {
 }
 
 const DUMMY_PASSCODE = 'study123';
+const DEFAULT_USER = 'Shajitha' as const;
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({
   darkMode,
   onToggleDarkMode,
 }) => {
   const { signIn, quickLocalSignIn, syncMode } = useLdoi();
-  const [memberName, setMemberName] = useState<MemberName>('Sajitha');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [unlocking, setUnlocking] = useState(false);
-  const [unlockLabel, setUnlockLabel] = useState('');
 
-  const triggerUnlockAnimation = (name: string, onDone: () => void) => {
-    setUnlockLabel(name);
+  const triggerUnlockAnimation = (onDone: () => void) => {
     setUnlocking(true);
     window.setTimeout(() => {
       onDone();
@@ -45,12 +41,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         setError('Incorrect password');
         return;
       }
-      triggerUnlockAnimation(memberName, () => quickLocalSignIn(memberName));
+      triggerUnlockAnimation(() => quickLocalSignIn(DEFAULT_USER));
       return;
     }
 
     setBusy(true);
-    const email = `${memberName.toLowerCase()}@learninghub.local`;
+    const email = `${DEFAULT_USER.toLowerCase()}@learninghub.local`;
     const res = await signIn(email, password);
     setBusy(false);
     if (res.error) {
@@ -91,7 +87,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             <div className="px-6 py-1.5 flex items-center justify-center gap-2.5">
               <CheckCircle2 className="w-4 h-4 text-[#4D8B6F]" />
               <span className="text-xs font-bold">
-                Opening {unlockLabel}&apos;s Study Desk...
+                Opening Study Desk...
               </span>
             </div>
           ) : (
@@ -105,35 +101,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 <span className="text-xs font-bold tracking-tight whitespace-nowrap">
                   Iqra Desk
                 </span>
-              </div>
-
-              {/* Compact Profile Toggle (Sajitha / Dhani) */}
-              <div
-                className={`flex items-center rounded-xl p-0.5 border ${darkMode
-                  ? 'bg-black/30 border-white/10'
-                  : 'bg-white/45 border-white/70'
-                  }`}
-              >
-                {TEAM_MEMBERS.map((m) => {
-                  const selected = memberName === m.name;
-                  return (
-                    <button
-                      key={m.name}
-                      type="button"
-                      onClick={() => setMemberName(m.name)}
-                      className={`ios-press px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${selected
-                        ? darkMode
-                          ? 'bg-white/20 text-white shadow-xs'
-                          : 'bg-white/90 text-[#23211E] shadow-xs'
-                        : darkMode
-                          ? 'text-zinc-400 hover:text-white'
-                          : 'text-[#524C44] hover:text-[#23211E]'
-                        }`}
-                    >
-                      {m.name}
-                    </button>
-                  );
-                })}
               </div>
 
               {/* Password Input + Submit */}

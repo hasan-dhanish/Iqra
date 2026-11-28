@@ -96,7 +96,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 Iqra Desk
               </div>
               <div className="text-[11px] font-medium text-[#8E8E93]">
-                Sajitha&apos;s Study Space
+                Shajitha&apos;s Study Space
               </div>
             </div>
           </div>
@@ -260,7 +260,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             <div className="py-3 space-y-2.5">
               <div className="p-2.5 rounded-xl bg-black/5 text-xs text-[#3A3A3C] leading-relaxed">
-                Hey {currentUser?.name ?? 'Sajitha'}! Soon I&apos;ll help you summarize notes, quiz your syllabus, and plan exam prep.
+                Hey {currentUser?.name ?? 'Shajitha'}! Soon I&apos;ll help you summarize notes, quiz your syllabus, and plan exam prep.
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {['Summarize syllabus', 'Quiz me', 'Plan today'].map((chip) => (

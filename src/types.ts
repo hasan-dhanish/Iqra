@@ -1,4 +1,4 @@
-export type MemberName = 'Sajitha' | 'Dhani';
+export type MemberName = 'Shajitha' | 'Dhani';
 export type OwnerScope = MemberName | 'Both';
 
 export interface TeamMember {

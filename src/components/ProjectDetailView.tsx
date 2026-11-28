@@ -376,7 +376,7 @@ export const ProjectDetailView: React.FC<ProjectDetailViewProps> = ({
                     className="px-2.5 py-2 text-xs rounded-xl border border-[#E2E0D8] bg-white/60"
                   >
                     <option value="Both">Both</option>
-                    <option value="Sajitha">Sajitha</option>
+                    <option value="Shajitha">Shajitha</option>
                     <option value="Dhani">Dhani</option>
                   </select>
                   <button

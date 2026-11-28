@@ -83,24 +83,21 @@ const FlipTile: React.FC<FlipTileProps> = ({ value, accent = false }) => {
 interface SevenSegmentClockProps {
   hours: string;
   minutes: string;
-  seconds: string;
   period: string;
 }
 
 export const SevenSegmentClock: React.FC<SevenSegmentClockProps> = ({
   hours,
   minutes,
-  seconds,
   period,
 }) => {
   const hh = hours.padStart(2, '0');
   const mm = minutes.padStart(2, '0');
-  const ss = seconds.padStart(2, '0');
 
   return (
     <div
       className="flex items-center gap-1.5 pr-4 border-r border-[#E2E0D8]"
-      aria-label={`${hh}:${mm}:${ss} ${period}`}
+      aria-label={`${hh}:${mm} ${period}`}
     >
       <FlipTile value={hh} />
 
@@ -109,14 +106,7 @@ export const SevenSegmentClock: React.FC<SevenSegmentClockProps> = ({
         <span className="w-1.5 h-1.5 rounded-full bg-current" />
       </div>
 
-      <FlipTile value={mm} />
-
-      <div className="flex flex-col items-center justify-center gap-1.5 text-[#9B5B76] px-0.5">
-        <span className="w-1.5 h-1.5 rounded-full bg-current" />
-        <span className="w-1.5 h-1.5 rounded-full bg-current" />
-      </div>
-
-      <FlipTile value={ss} accent />
+      <FlipTile value={mm} accent />
 
       <span className="text-[10px] font-bold tracking-wider text-[#8E8E93] self-end pb-1 pl-0.5">
         {period}

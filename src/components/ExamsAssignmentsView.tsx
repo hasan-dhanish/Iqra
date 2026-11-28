@@ -130,7 +130,7 @@ export const ExamsAssignmentsView: React.FC = () => {
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 bg-black/5 rounded-xl p-1">
-            {(['All', 'Sajitha', 'Dhani', 'Both'] as const).map((o) => (
+            {(['All', 'Shajitha', 'Dhani', 'Both'] as const).map((o) => (
               <button
                 key={o}
                 type="button"
@@ -238,7 +238,7 @@ export const ExamsAssignmentsView: React.FC = () => {
                   className="px-3 py-2 text-xs rounded-xl border border-[#E2E0D8] bg-white/60"
                 >
                   <option value="Both">Both</option>
-                  <option value="Sajitha">Sajitha</option>
+                  <option value="Shajitha">Shajitha</option>
                   <option value="Dhani">Dhani</option>
                 </select>
                 <input
@@ -438,7 +438,7 @@ export const ExamsAssignmentsView: React.FC = () => {
                   className="px-3 py-2 text-xs rounded-xl border border-[#E2E0D8] bg-white/60"
                 >
                   <option value="Both">Both</option>
-                  <option value="Sajitha">Sajitha</option>
+                  <option value="Shajitha">Shajitha</option>
                   <option value="Dhani">Dhani</option>
                 </select>
               </div>

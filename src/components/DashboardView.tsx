@@ -111,13 +111,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigate,
 }) => {
   const { currentUser } = useLdoi();
-  const myName = currentUser?.name ?? 'Sajitha';
+  const myName = currentUser?.name ?? 'Shajitha';
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
-  // Live clock
+  // Live clock (updates every 5s since seconds are hidden)
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    const timer = window.setInterval(() => setNow(new Date()), 5000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -135,7 +135,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const hour12Raw = now.getHours() % 12 || 12;
   const hoursStr = String(hour12Raw).padStart(2, '0');
   const minsStr = String(now.getMinutes()).padStart(2, '0');
-  const secsStr = String(now.getSeconds()).padStart(2, '0');
   const periodStr = now.getHours() >= 12 ? 'PM' : 'AM';
   const greeting =
     now.getHours() < 12
@@ -151,7 +150,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* Day FPV Scene */}
         <img
           src="/fpv-desk-day.jpg"
-          alt="Sajitha's Morning Study Desk FPV"
+          alt="Shajitha's Morning Study Desk FPV"
+          loading="eager"
+          decoding="async"
           draggable={false}
           className="absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ease-in-out"
           style={{ opacity: darkMode ? 0 : 1 }}
@@ -160,7 +161,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* Night / Sunset FPV Scene */}
         <img
           src="/fpv-desk-night.jpg"
-          alt="Sajitha's Sunset Study Desk FPV"
+          alt="Shajitha's Sunset Study Desk FPV"
+          loading="eager"
+          decoding="async"
           draggable={false}
           className="absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ease-in-out"
           style={{ opacity: darkMode ? 1 : 0 }}
@@ -178,7 +181,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <SevenSegmentClock
               hours={hoursStr}
               minutes={minsStr}
-              seconds={secsStr}
               period={periodStr}
             />
             <div className="min-w-0 pr-1">
