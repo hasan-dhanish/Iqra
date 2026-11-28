@@ -37,9 +37,10 @@ interface DeskHotspot {
   subtitle: string;
   accent: string;
   icon: React.ComponentType<{ className?: string }>;
-  day: { left: string; top: string; width: string; height: string };
-  night: { left: string; top: string; width: string; height: string };
-  labelPosition?: 'top' | 'bottom';
+  /** Exact SVG contour path in 1600x900 desk coordinate space */
+  path: string;
+  /** Anchor point (%) for the floating hover label pill */
+  labelAnchor: { left: string; top: string };
 }
 
 const DESK_HOTSPOTS: DeskHotspot[] = [
@@ -50,9 +51,8 @@ const DESK_HOTSPOTS: DeskHotspot[] = [
     subtitle: 'Open your study notebooks',
     accent: '#1B5E5A',
     icon: BookOpen,
-    day: { left: '35%', top: '76%', width: '34%', height: '23%' },
-    night: { left: '35%', top: '76%', width: '34%', height: '23%' },
-    labelPosition: 'top',
+    path: 'M 560 816 L 724 698 Q 815 696 875 724 Q 960 715 1112 758 L 1006 896 Q 885 876 768 866 Q 660 842 560 816 Z',
+    labelAnchor: { left: '52%', top: '76%' },
   },
   {
     id: 'folder',
@@ -61,9 +61,8 @@ const DESK_HOTSPOTS: DeskHotspot[] = [
     subtitle: 'Open folders & study matrix',
     accent: '#254454',
     icon: FolderOpen,
-    day: { left: '53%', top: '67%', width: '25%', height: '19%' },
-    night: { left: '53%', top: '67%', width: '25%', height: '19%' },
-    labelPosition: 'top',
+    path: 'M 850 672 L 978 604 L 1228 636 L 1224 658 L 1162 744 L 850 694 Z',
+    labelAnchor: { left: '65%', top: '67%' },
   },
   {
     id: 'tablet',
@@ -72,9 +71,8 @@ const DESK_HOTSPOTS: DeskHotspot[] = [
     subtitle: 'Watch study lectures',
     accent: '#A43850',
     icon: Tv,
-    day: { left: '24%', top: '55%', width: '20%', height: '29%' },
-    night: { left: '24%', top: '55%', width: '20%', height: '29%' },
-    labelPosition: 'top',
+    path: 'M 390 546 Q 390 538 398 537 L 644 502 Q 654 501 656 510 L 696 678 Q 698 686 688 689 L 444 753 Q 436 755 430 748 L 392 716 Z',
+    labelAnchor: { left: '34%', top: '55%' },
   },
   {
     id: 'timer',
@@ -83,9 +81,8 @@ const DESK_HOTSPOTS: DeskHotspot[] = [
     subtitle: 'Start Pomodoro or countdown',
     accent: '#9B5B76',
     icon: Timer,
-    day: { left: '43%', top: '56%', width: '10%', height: '17%' },
-    night: { left: '43%', top: '56%', width: '10%', height: '17%' },
-    labelPosition: 'top',
+    path: 'M 716 514 L 828 510 Q 848 510 848 530 L 850 626 Q 850 646 830 647 L 718 653 Q 698 654 698 634 L 696 534 Q 696 514 716 514 Z',
+    labelAnchor: { left: '48.2%', top: '56%' },
   },
   {
     id: 'habits',
@@ -94,9 +91,8 @@ const DESK_HOTSPOTS: DeskHotspot[] = [
     subtitle: 'Check daily streaks & habits',
     accent: '#133F47',
     icon: CheckCircle2,
-    day: { left: '77%', top: '58%', width: '10.5%', height: '15%' },
-    night: { left: '77%', top: '58%', width: '10.5%', height: '15%' },
-    labelPosition: 'top',
+    path: 'M 1256 532 L 1400 544 L 1386 650 L 1358 650 L 1356 668 L 1272 658 L 1272 640 L 1244 638 Z',
+    labelAnchor: { left: '82.5%', top: '58%' },
   },
   {
     id: 'files',
@@ -105,9 +101,8 @@ const DESK_HOTSPOTS: DeskHotspot[] = [
     subtitle: 'Browse study PDFs & resources',
     accent: '#5B3A70',
     icon: Library,
-    day: { left: '80.5%', top: '71%', width: '19%', height: '23%' },
-    night: { left: '80.5%', top: '71%', width: '19%', height: '23%' },
-    labelPosition: 'top',
+    path: 'M 1292 748 L 1418 642 L 1600 676 L 1600 838 L 1562 846 L 1292 796 Z',
+    labelAnchor: { left: '90%', top: '71%' },
   },
 ];
 
@@ -222,64 +217,80 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </button>
         </div>
 
-        {/* Interactive Clickable Desk Object Hotspots */}
-        <div className="absolute inset-0 z-10">
+        {/* Interactive Object-Shaped Desk Hotspots */}
+        <svg
+          viewBox="0 0 1600 900"
+          preserveAspectRatio="none"
+          className="absolute inset-0 w-full h-full z-10"
+        >
+          <defs>
+            <filter id="desk-hotspot-glow" x="-15%" y="-15%" width="130%" height="130%">
+              <feDropShadow dx="0" dy="0" stdDeviation="6" floodColor="#ffffff" floodOpacity="0.65" />
+            </filter>
+          </defs>
           {DESK_HOTSPOTS.map((spot) => {
-            const rect = darkMode ? spot.night : spot.day;
             const isHovered = hoveredId === spot.id;
-            const Icon = spot.icon;
-
             return (
-              <button
+              <path
                 key={spot.id}
-                type="button"
+                d={spot.path}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open ${spot.label}`}
                 onClick={() => onNavigate(spot.tab)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onNavigate(spot.tab);
+                  }
+                }}
                 onMouseEnter={() => setHoveredId(spot.id)}
                 onMouseLeave={() => setHoveredId((prev) => (prev === spot.id ? null : prev))}
-                aria-label={`Open ${spot.label}`}
-                style={{
-                  left: rect.left,
-                  top: rect.top,
-                  width: rect.width,
-                  height: rect.height,
-                }}
-                className="group absolute rounded-2xl cursor-pointer focus:outline-none transition-all duration-200"
-              >
-                {/* Soft Luminous Hover Outline */}
-                <span
-                  aria-hidden="true"
-                  className={`absolute inset-0 rounded-2xl transition-all duration-200 ${
-                    isHovered
-                      ? 'bg-white/12 ring-2 ring-white/80 shadow-[0_0_24px_rgba(255,255,255,0.45)]'
-                      : 'bg-transparent ring-0 hover:bg-white/8'
-                  }`}
-                />
+                onFocus={() => setHoveredId(spot.id)}
+                onBlur={() => setHoveredId((prev) => (prev === spot.id ? null : prev))}
+                className="cursor-pointer focus:outline-none transition-all duration-200"
+                fill={isHovered ? 'rgba(255, 255, 255, 0.13)' : 'rgba(255, 255, 255, 0)'}
+                stroke={isHovered ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0)'}
+                strokeWidth={3.5}
+                strokeLinejoin="round"
+                strokeLinecap="round"
+                filter={isHovered ? 'url(#desk-hotspot-glow)' : undefined}
+              />
+            );
+          })}
+        </svg>
 
-                {/* Floating Glass Label Pill on Hover */}
-                <div
-                  className={`pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2.5 px-3 py-1.5 rounded-xl bg-black/75 backdrop-blur-xl border border-white/20 text-white shadow-xl whitespace-nowrap flex items-center gap-2 transition-all duration-200 ${
-                    isHovered
-                      ? 'opacity-100 translate-y-0 scale-100'
-                      : 'opacity-0 translate-y-1.5 scale-95'
-                  }`}
+        {/* Floating Glass Label Pills on Hover */}
+        <div className="pointer-events-none absolute inset-0 z-20">
+          {DESK_HOTSPOTS.map((spot) => {
+            const isHovered = hoveredId === spot.id;
+            const Icon = spot.icon;
+            return (
+              <div
+                key={spot.id}
+                style={{ left: spot.labelAnchor.left, top: spot.labelAnchor.top }}
+                className={`absolute -translate-x-1/2 -translate-y-full -mt-2.5 px-3 py-1.5 rounded-xl bg-black/75 backdrop-blur-xl border border-white/20 text-white shadow-xl whitespace-nowrap flex items-center gap-2 transition-all duration-200 ${
+                  isHovered
+                    ? 'opacity-100 translate-y-[-100%] scale-100'
+                    : 'opacity-0 translate-y-[calc(-100%+6px)] scale-95'
+                }`}
+              >
+                <span
+                  className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: spot.accent }}
                 >
-                  <span
-                    className="w-5 h-5 rounded-full flex items-center justify-center shrink-0"
-                    style={{ backgroundColor: spot.accent }}
-                  >
-                    <Icon className="w-3 h-3 text-white" />
-                  </span>
-                  <div className="text-left">
-                    <div className="text-[11px] font-bold leading-tight flex items-center gap-1">
-                      {spot.label}
-                      <ArrowRight className="w-3 h-3 opacity-80" />
-                    </div>
-                    <div className="text-[9px] text-white/70 leading-tight">
-                      {spot.subtitle}
-                    </div>
+                  <Icon className="w-3 h-3 text-white" />
+                </span>
+                <div className="text-left">
+                  <div className="text-[11px] font-bold leading-tight flex items-center gap-1">
+                    {spot.label}
+                    <ArrowRight className="w-3 h-3 opacity-80" />
+                  </div>
+                  <div className="text-[9px] text-white/70 leading-tight">
+                    {spot.subtitle}
                   </div>
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
