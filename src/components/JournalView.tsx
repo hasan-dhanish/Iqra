@@ -1049,6 +1049,21 @@ export const JournalView: React.FC = () => {
                             </div>
                           </div>
                         </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteBook(
+                              book.name,
+                              pages.map((p) => p.id)
+                            );
+                          }}
+                          title={`Delete ${book.name}`}
+                          className="absolute -top-2 -right-2 z-20 p-1.5 rounded-full bg-white shadow-md text-[#52525B] hover:text-red-600 opacity-90 hover:opacity-100 transition-opacity"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
                       </div>
                     );
                   })}

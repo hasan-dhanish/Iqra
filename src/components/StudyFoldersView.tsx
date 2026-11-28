@@ -286,16 +286,14 @@ export const StudyFoldersView: React.FC<StudyFoldersViewProps> = ({ onOpenFolder
                       >
                         <Pencil className="w-3 h-3" />
                       </button>
-                      {folders.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteFolder(folder.id)}
-                          title="Delete folder"
-                          className="p-1.5 rounded-full bg-white shadow-md text-[#52525B] hover:text-red-600"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteFolder(folder.id)}
+                        title="Delete folder"
+                        className="p-1.5 rounded-full bg-white shadow-md text-[#52525B] hover:text-red-600"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
                     </div>
                   </div>
                 );
