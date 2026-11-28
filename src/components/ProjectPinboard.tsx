@@ -642,6 +642,7 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
 
   const [activeStroke, setActiveStroke] = useState<BoardStroke | null>(null);
   const [drawMode, setDrawMode] = useState(false);
+  const [eraserMode, setEraserMode] = useState(false);
   const [penColor, setPenColor] = useState('#0A5386');
   const [penWidth, setPenWidth] = useState(3);
   const [showElementsMenu, setShowElementsMenu] = useState(false);
@@ -705,8 +706,19 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
     return [];
   });
   const [ytResultsById, setYtResultsById] = useState<
-    Record<string, { videoId: string; title: string; channel: string; thumbnail: string }[]>
+    Record<
+      string,
+      {
+        videoId: string;
+        listId?: string;
+        title: string;
+        channel: string;
+        thumbnail: string;
+        durationText?: string;
+      }[]
+    >
   >({});
+  const [ytSearchTypeById, setYtSearchTypeById] = useState<Record<string, 'all' | 'playlist'>>({});
   const [ytSearchingId, setYtSearchingId] = useState<string | null>(null);
   const [ytPlaylistDrawerId, setYtPlaylistDrawerId] = useState<string | null>(null);
   const [savedPlaylists, setSavedPlaylists] = useState<SavedYtPlaylist[]>([]);
@@ -757,12 +769,22 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
   };
 
   // --- Export Infinite Matrix (PNG Image, PDF, SVG, JSON) ---
-  const exportMatrixAs = (format: 'png' | 'pdf' | 'svg' | 'json') => {
+  const exportMatrixAs = async (format: 'png' | 'pdf' | 'svg' | 'json') => {
     setShowMatrixExportMenu(false);
     const safeName = (project.title || 'study-matrix').replace(/[^a-z0-9-_]+/gi, '_').toLowerCase();
 
-    const getNoteLabel = (content?: string) =>
-      (content || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) || 'Note Page';
+    const getNoteDetails = (content?: string) => {
+      const parsed = parsePinPageContent(content || '');
+      const plainBody = (parsed.bodyHtml || '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return {
+        title: parsed.title?.trim() || 'Untitled Note',
+        body: plainBody,
+        bgColor: parsed.bgColor || '#FFFFFF',
+      };
+    };
 
     if (format === 'json') {
       const payload = {
@@ -774,7 +796,10 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
         positions,
         drivePins,
         ytSessions,
-        pages: pinnedPages.map((p) => ({ id: p.id, title: getNoteLabel(p.content), content: p.content })),
+        pages: pinnedPages.map((p) => {
+          const det = getNoteDetails(p.content);
+          return { id: p.id, title: det.title, body: det.body };
+        }),
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -787,19 +812,65 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
     }
 
     // Compute world bounding box across all elements
-    const boxes: { x: number; y: number; w: number; h: number; label: string; kind: string; color?: string }[] = [];
-    zones.forEach((z) => boxes.push({ x: z.x, y: z.y, w: z.w, h: z.h, label: z.title || 'Zone', kind: 'zone', color: z.color }));
+    interface ExportBox {
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      label: string;
+      body?: string;
+      kind: 'zone' | 'page' | 'image' | 'file' | 'drive' | 'yt';
+      color?: string;
+      imgUrl?: string;
+      driveFileId?: string;
+      driveMime?: string;
+    }
+    const boxes: ExportBox[] = [];
+    zones.forEach((z) =>
+      boxes.push({ x: z.x, y: z.y, w: z.w, h: z.h, label: z.title || 'Zone', kind: 'zone', color: z.color })
+    );
     pinnedPages.forEach((p, idx) => {
-      const r = getCardRect(`page_${p.id}`) ?? { ...getPos(`page_${p.id}`, projectDocs.length + idx), w: 300, h: 165 };
-      boxes.push({ ...r, label: getNoteLabel(p.content), kind: 'page' });
+      const r = getCardRect(`page_${p.id}`) ?? {
+        ...getPos(`page_${p.id}`, projectDocs.length + idx),
+        w: 300,
+        h: 165,
+      };
+      const det = getNoteDetails(p.content);
+      boxes.push({ ...r, label: det.title, body: det.body, color: det.bgColor, kind: 'page' });
     });
     projectDocs.forEach((d, idx) => {
       const r = getCardRect(`doc_${d.id}`) ?? { ...getPos(`doc_${d.id}`, idx), w: 240, h: 190 };
-      boxes.push({ ...r, label: d.name, kind: d.mimeType.startsWith('image/') ? 'image' : 'file' });
+      const isImg = d.mimeType.startsWith('image/');
+      boxes.push({
+        ...r,
+        label: d.name,
+        kind: isImg ? 'image' : 'file',
+        imgUrl: isImg ? d.url : undefined,
+      });
     });
-    drivePins.forEach((d) => boxes.push({ x: d.x, y: d.y, w: d.w, h: d.h, label: d.file.name, kind: 'drive' }));
+    drivePins.forEach((d) =>
+      boxes.push({
+        x: d.x,
+        y: d.y,
+        w: d.w,
+        h: d.h,
+        label: d.file.name,
+        kind: 'drive',
+        imgUrl: d.file.thumbnailLink ? d.file.thumbnailLink.replace(/=s\d+/, '=s800') : undefined,
+        driveFileId: d.file.id,
+        driveMime: d.file.mimeType,
+      })
+    );
     ytSessions.forEach((s, idx) =>
-      boxes.push({ x: s.x, y: s.y, w: s.w, h: s.minimized ? 44 : s.h, label: s.title || `YouTube ${idx + 1}`, kind: 'yt' })
+      boxes.push({
+        x: s.x,
+        y: s.y,
+        w: s.w,
+        h: s.minimized ? 44 : s.h,
+        label: s.title || `YouTube ${idx + 1}`,
+        kind: 'yt',
+        imgUrl: s.videoId ? `https://i.ytimg.com/vi/${s.videoId}/hqdefault.jpg` : undefined,
+      })
     );
 
     const xs: number[] = [];
@@ -808,7 +879,12 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
       xs.push(b.x, b.x + b.w);
       ys.push(b.y, b.y + b.h);
     });
-    strokes.forEach((s) => s.points.forEach(([px, py]) => { xs.push(px); ys.push(py); }));
+    strokes.forEach((s) =>
+      s.points.forEach(([px, py]) => {
+        xs.push(px);
+        ys.push(py);
+      })
+    );
 
     const pad = 60;
     const minX = (xs.length ? Math.min(...xs) : 0) - pad;
@@ -832,8 +908,11 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
         .filter((b) => b.kind !== 'zone')
         .map(
           (b) =>
-            `<rect x="${b.x - minX}" y="${b.y - minY}" width="${b.w}" height="${b.h}" rx="14" fill="#ffffff" stroke="#E4E2DC" stroke-width="2" />` +
-            `<text x="${b.x - minX + 14}" y="${b.y - minY + 28}" font-family="sans-serif" font-size="14" font-weight="700" fill="#18181B">${esc(b.label)}</text>`
+            `<rect x="${b.x - minX}" y="${b.y - minY}" width="${b.w}" height="${b.h}" rx="14" fill="${b.kind === 'page' && b.color ? esc(b.color) : '#ffffff'}" stroke="#E4E2DC" stroke-width="2" />` +
+            `<text x="${b.x - minX + 14}" y="${b.y - minY + 28}" font-family="sans-serif" font-size="14" font-weight="700" fill="#18181B">${esc(b.label)}</text>` +
+            (b.body
+              ? `<text x="${b.x - minX + 14}" y="${b.y - minY + 50}" font-family="sans-serif" font-size="12" fill="#52525B">${esc(b.body.slice(0, 60))}</text>`
+              : '')
         )
         .join('\n');
       const strokeSvg = strokes
@@ -853,6 +932,56 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
       return;
     }
 
+    // Helper to load images safely without tainting the export canvas
+    const token = matrixDriveToken || getCachedDriveToken();
+    const loadSafeImage = async (b: ExportBox): Promise<HTMLImageElement | null> => {
+      const tryImg = (src: string, useAnon = true) =>
+        new Promise<HTMLImageElement | null>((resolve) => {
+          const img = new Image();
+          if (useAnon) img.crossOrigin = 'anonymous';
+          img.onload = () => resolve(img);
+          img.onerror = () => resolve(null);
+          img.src = src;
+        });
+
+      if (b.kind === 'image' && b.imgUrl) {
+        return tryImg(b.imgUrl, false);
+      }
+      if (b.kind === 'drive' && b.driveFileId && token && b.driveMime?.startsWith('image/')) {
+        try {
+          const res = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(b.driveFileId)}?alt=media`,
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          if (res.ok) {
+            const blob = await res.blob();
+            const objUrl = URL.createObjectURL(blob);
+            const img = await tryImg(objUrl, false);
+            URL.revokeObjectURL(objUrl);
+            if (img) return img;
+          }
+        } catch {
+          // fallback to thumbnail
+        }
+      }
+      if (b.imgUrl) {
+        return tryImg(b.imgUrl, true);
+      }
+      return null;
+    };
+
+    const loadedImages = new Map<ExportBox, HTMLImageElement | null>();
+    await Promise.all(
+      boxes
+        .filter((b) => b.imgUrl || b.driveFileId)
+        .map(async (b) => {
+          loadedImages.set(b, await loadSafeImage(b));
+        })
+    );
+
+    const isDark =
+      typeof document !== 'undefined' && Boolean(document.querySelector('.dark-theme'));
+
     // Render to Canvas for PNG / PDF
     const canvas = document.createElement('canvas');
     const scale = Math.min(2, 2400 / Math.max(width, height));
@@ -862,77 +991,171 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
     if (!ctx) return;
     ctx.scale(scale, scale);
 
-    ctx.fillStyle = '#FAF9F6';
+    ctx.fillStyle = isDark ? '#0B0D12' : '#FAF9F6';
     ctx.fillRect(0, 0, width, height);
 
-    // Subtle grid
-    ctx.strokeStyle = 'rgba(0,0,0,0.045)';
-    ctx.lineWidth = 1;
-    for (let gx = 0; gx < width; gx += 32) {
-      ctx.beginPath();
-      ctx.moveTo(gx, 0);
-      ctx.lineTo(gx, height);
-      ctx.stroke();
-    }
-    for (let gy = 0; gy < height; gy += 32) {
-      ctx.beginPath();
-      ctx.moveTo(0, gy);
-      ctx.lineTo(width, gy);
-      ctx.stroke();
+    // Subtle dot grid matching Matrix
+    ctx.fillStyle = isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.08)';
+    for (let gx = 0; gx < width; gx += 28) {
+      for (let gy = 0; gy < height; gy += 28) {
+        ctx.fillRect(gx, gy, 1.5, 1.5);
+      }
     }
 
     // Zones
-    boxes.filter((b) => b.kind === 'zone').forEach((b) => {
-      ctx.save();
-      ctx.fillStyle = `${b.color || '#0A5386'}18`;
-      ctx.strokeStyle = b.color || '#0A5386';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([8, 6]);
-      ctx.beginPath();
-      ctx.roundRect(b.x - minX, b.y - minY, b.w, b.h, 16);
-      ctx.fill();
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = b.color || '#0A5386';
-      ctx.font = 'bold 14px system-ui, sans-serif';
-      ctx.fillText(b.label, b.x - minX + 14, b.y - minY + 24);
-      ctx.restore();
-    });
+    boxes
+      .filter((b) => b.kind === 'zone')
+      .forEach((b) => {
+        ctx.save();
+        ctx.fillStyle = `${b.color || '#0A5386'}18`;
+        ctx.strokeStyle = b.color || '#0A5386';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 6]);
+        ctx.beginPath();
+        ctx.roundRect(b.x - minX, b.y - minY, b.w, b.h, 16);
+        ctx.fill();
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = b.color || '#0A5386';
+        ctx.font = 'bold 14px system-ui, sans-serif';
+        ctx.fillText(b.label, b.x - minX + 14, b.y - minY + 24);
+        ctx.restore();
+      });
 
-    // Cards
-    boxes.filter((b) => b.kind !== 'zone').forEach((b) => {
-      ctx.save();
-      ctx.fillStyle = '#FFFFFF';
-      ctx.strokeStyle = '#E4E2DC';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.roundRect(b.x - minX, b.y - minY, b.w, b.h, 14);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = '#18181B';
-      ctx.font = 'bold 14px system-ui, sans-serif';
-      ctx.fillText(b.label.slice(0, 42), b.x - minX + 14, b.y - minY + 28);
-      ctx.fillStyle = '#71717A';
-      ctx.font = '11px system-ui, sans-serif';
-      ctx.fillText(b.kind.toUpperCase(), b.x - minX + 14, b.y - minY + 48);
-      ctx.restore();
-    });
+    // Cards (Pages, Drive, YT, Images, Files)
+    boxes
+      .filter((b) => b.kind !== 'zone')
+      .forEach((b) => {
+        const cx = b.x - minX;
+        const cy = b.y - minY;
+        ctx.save();
 
-    // Connectors
+        const cardBg =
+          b.kind === 'page'
+            ? b.color || '#FFFFFF'
+            : b.kind === 'yt'
+            ? isDark
+              ? '#18181B'
+              : '#FFFFFF'
+            : isDark
+            ? '#161B22'
+            : '#FFFFFF';
+
+        ctx.fillStyle = cardBg;
+        ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.16)' : '#E4E2DC';
+        ctx.lineWidth = 1.75;
+        ctx.beginPath();
+        ctx.roundRect(cx, cy, b.w, b.h, 14);
+        ctx.fill();
+        ctx.stroke();
+
+        // Clip inside card
+        ctx.beginPath();
+        ctx.roundRect(cx, cy, b.w, b.h, 14);
+        ctx.clip();
+
+        if (b.kind === 'page') {
+          ctx.fillStyle = '#18181B';
+          ctx.font = 'bold 14px system-ui, sans-serif';
+          ctx.fillText(b.label.slice(0, 42), cx + 14, cy + 28);
+          if (b.body) {
+            ctx.fillStyle = '#52525B';
+            ctx.font = '12px system-ui, sans-serif';
+            const words = b.body.split(' ');
+            let line = '';
+            let ly = cy + 50;
+            for (const w of words) {
+              const test = line ? `${line} ${w}` : w;
+              if (ctx.measureText(test).width > b.w - 28) {
+                ctx.fillText(line, cx + 14, ly);
+                line = w;
+                ly += 18;
+                if (ly > cy + b.h - 14) break;
+              } else {
+                line = test;
+              }
+            }
+            if (line && ly <= cy + b.h - 14) ctx.fillText(line, cx + 14, ly);
+          }
+        } else {
+          // Header bar for Drive / YT / File / Image
+          const headerH = 34;
+          ctx.fillStyle =
+            b.kind === 'yt'
+              ? 'rgba(164, 56, 80, 0.16)'
+              : isDark
+              ? 'rgba(255,255,255,0.06)'
+              : 'rgba(10, 83, 134, 0.08)';
+          ctx.fillRect(cx, cy, b.w, headerH);
+
+          ctx.fillStyle = isDark ? '#F4F4F5' : '#18181B';
+          ctx.font = 'bold 12px system-ui, sans-serif';
+          ctx.fillText(b.label.slice(0, 40), cx + 12, cy + 21);
+
+          const img = loadedImages.get(b);
+          if (img) {
+            const padImg = 8;
+            const availW = b.w - padImg * 2;
+            const availH = b.h - headerH - padImg * 2;
+            if (availW > 10 && availH > 10) {
+              const scaleFit = Math.min(availW / img.width, availH / img.height);
+              const dw = img.width * scaleFit;
+              const dh = img.height * scaleFit;
+              const dx = cx + padImg + (availW - dw) / 2;
+              const dy = cy + headerH + padImg + (availH - dh) / 2;
+              ctx.drawImage(img, dx, dy, dw, dh);
+            }
+          } else {
+            ctx.fillStyle = isDark ? '#A1A1AA' : '#71717A';
+            ctx.font = '11px system-ui, sans-serif';
+            ctx.fillText(b.kind.toUpperCase(), cx + 12, cy + headerH + 22);
+          }
+        }
+
+        ctx.restore();
+      });
+
+    // Connectors (with orthogonal routing + arrowheads)
     connectors.forEach((conn) => {
       const r1 = getCardRect(conn.fromId);
       const r2 = getCardRect(conn.toId);
       if (!r1 || !r2) return;
-      const p1 = getAnchorPoint(r1, conn.fromAnchor ?? 'right');
-      const p2 = getAnchorPoint(r2, conn.toAnchor ?? 'left');
+      const fromSide = conn.fromAnchor ?? 'right';
+      const toSide = conn.toAnchor ?? 'left';
+      const p1 = getAnchorPoint(r1, fromSide);
+      const p2 = getAnchorPoint(r2, toSide);
+      const pts = getConnectorPolylinePoints(p1, fromSide, p2, toSide, conn.segOffsets);
+      if (pts.length < 2) return;
       ctx.save();
       ctx.strokeStyle = conn.color;
+      ctx.fillStyle = conn.color;
       ctx.lineWidth = 2.5;
       if (conn.style === 'dashed') ctx.setLineDash([6, 4]);
       ctx.beginPath();
-      ctx.moveTo(p1.x - minX, p1.y - minY);
-      ctx.lineTo(p2.x - minX, p2.y - minY);
+      ctx.moveTo(pts[0].x - minX, pts[0].y - minY);
+      for (let i = 1; i < pts.length; i++) {
+        ctx.lineTo(pts[i].x - minX, pts[i].y - minY);
+      }
       ctx.stroke();
+      ctx.setLineDash([]);
+      if (conn.style === 'arrow' || conn.style === 'dashed') {
+        const last = pts[pts.length - 1];
+        const prev = pts[pts.length - 2];
+        const ang = Math.atan2(last.y - prev.y, last.x - prev.x);
+        const head = 10;
+        ctx.beginPath();
+        ctx.moveTo(last.x - minX, last.y - minY);
+        ctx.lineTo(
+          last.x - minX - head * Math.cos(ang - Math.PI / 6),
+          last.y - minY - head * Math.sin(ang - Math.PI / 6)
+        );
+        ctx.lineTo(
+          last.x - minX - head * Math.cos(ang + Math.PI / 6),
+          last.y - minY - head * Math.sin(ang + Math.PI / 6)
+        );
+        ctx.closePath();
+        ctx.fill();
+      }
       ctx.restore();
     });
 
@@ -1080,8 +1303,11 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
     }
 
     setYtSearchingId(sessionId);
+    const searchType = ytSearchTypeById[sessionId] ?? 'all';
     try {
-      const res = await fetch(`/api/yt-search?q=${encodeURIComponent(raw)}`);
+      const res = await fetch(
+        `/api/yt-search?q=${encodeURIComponent(raw)}&type=${encodeURIComponent(searchType)}`
+      );
       if (res.ok) {
         const data = (await res.json()) as {
           items?: { videoId: string; title: string; channel: string; thumbnail: string }[];
@@ -1804,6 +2030,61 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
       const startSnap = snapshotNow();
       const startWx = Math.round((e.clientX - rect.left - panRef.current.x) / zoomRef.current);
       const startWy = Math.round((e.clientY - rect.top - panRef.current.y) / zoomRef.current);
+
+      if (eraserMode) {
+        let erasedAny = false;
+        const distSq = (px: number, py: number, ax: number, ay: number, bx: number, by: number) => {
+          const dx = bx - ax;
+          const dy = by - ay;
+          const lenSq = dx * dx + dy * dy;
+          if (lenSq === 0) return (px - ax) * (px - ax) + (py - ay) * (py - ay);
+          const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+          const cx = ax + t * dx;
+          const cy = ay + t * dy;
+          return (px - cx) * (px - cx) + (py - cy) * (py - cy);
+        };
+        const eraseAt = (wx: number, wy: number) => {
+          setStrokes((prev) => {
+            const next = prev.filter((stk) => {
+              const thresh = Math.max(12 / zoomRef.current, stk.width * 2.5);
+              const threshSq = thresh * thresh;
+              if (stk.points.length === 1) {
+                const [px, py] = stk.points[0];
+                return (wx - px) * (wx - px) + (wy - py) * (wy - py) > threshSq;
+              }
+              for (let i = 1; i < stk.points.length; i++) {
+                const [ax, ay] = stk.points[i - 1];
+                const [bx, by] = stk.points[i];
+                if (distSq(wx, wy, ax, ay, bx, by) <= threshSq) return false;
+              }
+              return true;
+            });
+            if (next.length !== prev.length) {
+              if (!erasedAny) {
+                erasedAny = true;
+                pushHistory(startSnap);
+              }
+              saveBoardStrokes(project.id, next);
+              return next;
+            }
+            return prev;
+          });
+        };
+        eraseAt(startWx, startWy);
+        const onMove = (ev: PointerEvent) => {
+          const wx = Math.round((ev.clientX - rect.left - panRef.current.x) / zoomRef.current);
+          const wy = Math.round((ev.clientY - rect.top - panRef.current.y) / zoomRef.current);
+          eraseAt(wx, wy);
+        };
+        const onUp = () => {
+          window.removeEventListener('pointermove', onMove);
+          window.removeEventListener('pointerup', onUp);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        return;
+      }
+
       let current: BoardStroke = {
         id: `stk_${Date.now()}`,
         points: [[startWx, startWy]],
@@ -2483,17 +2764,23 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
             <button
               key={c}
               type="button"
-              onClick={() => setPenColor(c)}
+              onClick={() => {
+                setPenColor(c);
+                setEraserMode(false);
+              }}
               style={{ backgroundColor: c }}
               className={`w-4 h-4 rounded-full border border-black/20 ${
-                penColor === c ? 'ring-2 ring-offset-1 ring-[#0A5386]' : ''
+                !eraserMode && penColor === c ? 'ring-2 ring-offset-1 ring-[#0A5386]' : ''
               }`}
             />
           ))}
           <ColorWheelButton
             value={penColor}
             isCustom={!['#18181B', '#0A5386', '#8B1E1E', '#133F47', '#F4F4F5'].includes(penColor)}
-            onChange={(hex) => setPenColor(hex)}
+            onChange={(hex) => {
+              setPenColor(hex);
+              setEraserMode(false);
+            }}
             title="Pen Color Wheel"
           />
           <div className="w-px h-4 bg-[#E4E2DC]" />
@@ -2501,10 +2788,13 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
             <button
               key={w}
               type="button"
-              onClick={() => setPenWidth(w)}
+              onClick={() => {
+                setPenWidth(w);
+                setEraserMode(false);
+              }}
               title={`${w}px stroke`}
               className={`w-6 h-6 rounded-full flex items-center justify-center ${
-                penWidth === w ? 'bg-[#0A5386]/15 ring-1 ring-[#0A5386]' : 'hover:bg-black/5'
+                !eraserMode && penWidth === w ? 'bg-[#0A5386]/15 ring-1 ring-[#0A5386]' : 'hover:bg-black/5'
               }`}
             >
               <span
@@ -2516,15 +2806,25 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
           <div className="w-px h-4 bg-[#E4E2DC]" />
           <button
             type="button"
+            onClick={() => setEraserMode((v) => !v)}
+            title="Stroke Eraser (click or drag over a stroke to delete it)"
+            className={`p-1.5 rounded-full transition-colors ${
+              eraserMode ? 'bg-[#DC2626] text-white' : 'text-[#18181B] hover:bg-black/5'
+            }`}
+          >
+            <Eraser className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
             onClick={() => {
               pushHistory();
               setStrokes([]);
               saveBoardStrokes(project.id, []);
             }}
             title="Clear All Sketches"
-            className="p-1.5 rounded-full text-[#DC2626] hover:bg-[#DC2626]/10"
+            className="px-2 py-0.5 rounded-full text-[10px] font-bold text-[#DC2626] hover:bg-[#DC2626]/10"
           >
-            <Eraser className="w-3.5 h-3.5" />
+            Clear
           </button>
         </div>
       )}
@@ -3011,7 +3311,7 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
                     <div className="p-3 flex flex-col gap-2.5 flex-1 min-h-0 relative">
                       <form
                         onSubmit={(e) => void handleMatrixYtSubmit(yt.id, yt.query, e)}
-                        className="flex gap-1.5 shrink-0"
+                        className="flex items-center gap-1.5 shrink-0"
                       >
                         <input
                           type="text"
@@ -3020,6 +3320,34 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
                           placeholder="Paste video/playlist URL or search..."
                           className="flex-1 min-w-0 px-3 py-1.5 text-xs rounded-xl border border-[#E2E0D8] bg-white/85 focus:outline-none focus:border-[#A43850]"
                         />
+                        <div className="inline-flex items-center rounded-xl bg-black/5 p-0.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setYtSearchTypeById((prev) => ({ ...prev, [yt.id]: 'all' }))
+                            }
+                            className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-colors ${
+                              (ytSearchTypeById[yt.id] ?? 'all') === 'all'
+                                ? 'bg-[#A43850] text-white'
+                                : 'text-[#52525B] hover:text-[#1C1C1E]'
+                            }`}
+                          >
+                            All
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setYtSearchTypeById((prev) => ({ ...prev, [yt.id]: 'playlist' }))
+                            }
+                            className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-colors ${
+                              ytSearchTypeById[yt.id] === 'playlist'
+                                ? 'bg-[#A43850] text-white'
+                                : 'text-[#52525B] hover:text-[#1C1C1E]'
+                            }`}
+                          >
+                            Playlists
+                          </button>
+                        </div>
                         <button
                           type="submit"
                           disabled={isSearching}
@@ -3073,38 +3401,75 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
                       )}
 
                       {results.length > 0 && (
-                        <div className="max-h-40 overflow-y-auto space-y-1 pr-0.5 shrink-0">
-                          {results.map((item) => (
-                            <button
-                              key={item.videoId}
-                              type="button"
-                              onClick={() => {
-                                updateYtSession(yt.id, {
-                                  videoId: item.videoId,
-                                  playlistId: undefined,
-                                  title: item.title,
-                                });
-                                setYtResultsById((prev) => ({ ...prev, [yt.id]: [] }));
-                              }}
-                              className="w-full flex items-center gap-2 p-1.5 rounded-xl hover:bg-black/5 text-left"
-                            >
-                              <img
-                                src={item.thumbnail}
-                                alt=""
-                                className="w-12 h-8 rounded-md object-cover shrink-0"
-                              />
-                              <div className="min-w-0">
-                                <div className="text-[11px] font-semibold text-[#1C1C1E] line-clamp-1">
-                                  {item.title}
+                        <>
+                          {embedSrc && (
+                            <div className="flex items-center justify-between gap-2 shrink-0">
+                              <span className="text-[11px] font-semibold text-[#6E6E73] dark:text-zinc-400">
+                                {results.length} results
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setYtResultsById((prev) => ({ ...prev, [yt.id]: [] }))
+                                }
+                                className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-black/5 hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/20 text-[#1C1C1E] dark:text-white transition-colors"
+                              >
+                                Back to Player
+                              </button>
+                            </div>
+                          )}
+                          <div
+                            className="flex-1 min-h-0 overflow-y-auto grid gap-2.5 pr-1 content-start"
+                            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))' }}
+                          >
+                            {results.map((item) => (
+                              <button
+                                key={`${item.listId || ''}_${item.videoId}_${item.title}`}
+                                type="button"
+                                onClick={() => {
+                                  updateYtSession(yt.id, {
+                                    videoId: item.videoId,
+                                    playlistId: item.listId,
+                                    title: item.title,
+                                  });
+                                  setYtResultsById((prev) => ({ ...prev, [yt.id]: [] }));
+                                }}
+                                className="group/ytcard flex flex-col rounded-xl border border-[#E2E0D8] dark:border-white/15 bg-white/95 dark:bg-zinc-900/90 hover:bg-white dark:hover:bg-zinc-800 hover:border-[#A43850]/60 overflow-hidden text-left transition-all shadow-xs"
+                              >
+                                <div className="relative w-full aspect-video shrink-0 bg-black/15 overflow-hidden">
+                                  <img
+                                    src={item.thumbnail}
+                                    alt={item.title}
+                                    loading="lazy"
+                                    className="w-full h-full object-cover group-hover/ytcard:scale-[1.03] transition-transform"
+                                  />
+                                  {(item.listId || item.durationText) && (
+                                    <span
+                                      className={`absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[9px] font-bold shadow ${
+                                        item.listId
+                                          ? 'bg-[#A43850] text-white'
+                                          : 'bg-black/85 text-white'
+                                      }`}
+                                    >
+                                      {item.listId ? `PLAYLIST · ${item.durationText || ''}` : item.durationText}
+                                    </span>
+                                  )}
                                 </div>
-                                <div className="text-[10px] text-[#8E8E93] truncate">{item.channel}</div>
-                              </div>
-                            </button>
-                          ))}
-                        </div>
+                                <div className="p-2 min-w-0 flex-1 flex flex-col justify-between gap-1">
+                                  <div className="text-[11px] font-bold text-[#1C1C1E] dark:text-zinc-100 line-clamp-2 leading-snug">
+                                    {item.title}
+                                  </div>
+                                  <div className="text-[10px] text-[#6E6E73] dark:text-zinc-400 truncate">
+                                    {item.channel}
+                                  </div>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        </>
                       )}
 
-                      {embedSrc ? (
+                      {embedSrc && results.length === 0 && !showPlaylists ? (
                         <div className="w-full flex-1 min-h-[180px] rounded-xl overflow-hidden bg-black">
                           <iframe
                             src={embedSrc}
@@ -3115,9 +3480,13 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
                           />
                         </div>
                       ) : (
-                        <div className="flex-1 flex items-center justify-center p-4 text-center text-xs text-[#8E8E93] border border-dashed border-[#D6D3CB] rounded-xl">
-                          Search a topic, paste a YouTube video/playlist link, or pick from Playlists above.
-                        </div>
+                        !embedSrc &&
+                        results.length === 0 &&
+                        !showPlaylists && (
+                          <div className="flex-1 flex items-center justify-center p-4 text-center text-xs text-[#8E8E93] border border-dashed border-[#D6D3CB] dark:border-white/15 rounded-xl">
+                            Search a topic, paste a YouTube video/playlist link, or pick from Playlists above.
+                          </div>
+                        )
                       )}
 
                       {/* Bottom-Right Resize Handle */}
@@ -3132,8 +3501,8 @@ export const ProjectPinboard: React.FC<ProjectPinboardProps> = ({ project }) => 
                             const dx = (ev.clientX - startX) / zoomRef.current;
                             const dy = (ev.clientY - startY) / zoomRef.current;
                             updateYtSession(yt.id, {
-                              w: Math.max(340, Math.min(1100, Math.round(origW + dx))),
-                              h: Math.max(260, Math.min(820, Math.round(origH + dy))),
+                              w: Math.max(360, Math.min(1400, Math.round(origW + dx))),
+                              h: Math.max(280, Math.min(960, Math.round(origH + dy))),
                             });
                           };
                           const onUp = () => {

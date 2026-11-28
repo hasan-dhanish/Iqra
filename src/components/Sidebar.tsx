@@ -9,6 +9,8 @@ import {
   Library,
   LogOut,
   Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
   Send,
   Sparkles,
   Sun,
@@ -53,6 +55,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const { currentUser, signOut } = useLdoi();
   const battery = useBatteryStatus();
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('iqra_sidebar_collapsed') === '1';
+    } catch {
+      return false;
+    }
+  });
+  const toggleCollapsed = () => {
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        localStorage.setItem('iqra_sidebar_collapsed', next ? '1' : '0');
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
   const [spideyStage, setSpideyStage] = useState<'idle' | 'intro' | 'chat'>('idle');
   const spideyTimerRef = useRef<number | null>(null);
 
@@ -81,24 +101,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside
-      className={`no-print relative z-30 w-full md:w-64 md:my-4 md:ml-4 md:h-[calc(100vh-2rem)] md:sticky md:top-4 shrink-0 bg-white/70 backdrop-blur-2xl border-b md:border md:rounded-2xl flex flex-col justify-between overflow-visible ${darkMode
+      className={`no-print relative z-30 w-full ${
+        collapsed ? 'md:w-[72px]' : 'md:w-64'
+      } md:my-4 md:ml-4 md:h-[calc(100dvh-2rem)] md:sticky md:top-4 shrink-0 bg-white/70 backdrop-blur-2xl border-b md:border md:rounded-2xl flex flex-col justify-between overflow-visible transition-all duration-200 ${darkMode
         ? 'md:border-white/10 md:shadow-[0_20px_48px_rgba(0,0,0,0.45)]'
         : 'border-white/60 md:border-[#E4E2DC] md:shadow-[0_18px_42px_rgba(24,24,27,0.10)]'
         }`}
     >
       <div>
         {/* Brand Header */}
-        <div className="p-4 border-b border-[#E2E0D8] flex items-center justify-between gap-2">
-          <div className="flex items-center gap-3">
-            <LdoiLogo size={36} />
-            <div>
-              <div className="text-sm font-bold text-[#1C1C1E] leading-tight">
-                Iqra Desk
+        <div className={`${collapsed ? 'p-3' : 'p-4'} border-b border-[#E2E0D8] flex items-center justify-between gap-2`}>
+          <div className="flex items-center gap-3 min-w-0">
+            <LdoiLogo size={collapsed ? 30 : 36} />
+            {!collapsed && (
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-[#1C1C1E] leading-tight truncate">
+                  Iqra Desk
+                </div>
+                <div className="text-[11px] font-medium text-[#8E8E93] truncate">
+                  Shajitha&apos;s Study Space
+                </div>
               </div>
-              <div className="text-[11px] font-medium text-[#8E8E93]">
-                Shajitha&apos;s Study Space
-              </div>
-            </div>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
             {battery.supported && battery.pct !== null && (
@@ -120,13 +144,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {battery.pct}%
               </span>
             )}
+            {!collapsed && (
+              <button
+                type="button"
+                onClick={onToggleDarkMode}
+                title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                className="ios-press p-1.5 rounded-lg border border-[#E2E0D8] text-[#52525B] hover:text-[#1C1C1E]"
+              >
+                {darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              </button>
+            )}
             <button
               type="button"
-              onClick={onToggleDarkMode}
-              title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-              className="ios-press p-1.5 rounded-lg border border-[#E2E0D8] text-[#52525B] hover:text-[#1C1C1E]"
+              onClick={toggleCollapsed}
+              title={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar (more space on tablet)'}
+              className="hidden md:inline-flex ios-press p-1.5 rounded-lg border border-[#E2E0D8] text-[#52525B] hover:text-[#1C1C1E]"
             >
-              {darkMode ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+              {collapsed ? (
+                <PanelLeftOpen className="w-3.5 h-3.5" />
+              ) : (
+                <PanelLeftClose className="w-3.5 h-3.5" />
+              )}
             </button>
             <button
               type="button"
@@ -157,14 +195,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     }
                     : undefined
                 }
-                className={`relative ios-press flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap border transition-all ${active
+                className={`relative ios-press flex items-center ${
+                  collapsed ? 'md:justify-center md:px-2' : 'gap-2.5 px-2.5'
+                } py-2 rounded-xl text-xs font-semibold whitespace-nowrap border transition-all ${active
                   ? 'shadow-2xs text-[#1C1C1E]'
                   : darkMode
                     ? 'border-transparent text-zinc-300 hover:bg-white/10 hover:text-white'
                     : 'border-transparent text-[#3A3A3C] hover:bg-[#E4E0D5] hover:text-[#18181B]'
                   }`}
+                title={collapsed ? item.label : undefined}
               >
-                {active && (
+                {active && !collapsed && (
                   <img
                     key={activeTab}
                     src="/mascot-tab.png"
@@ -179,7 +220,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <Icon className="w-3.5 h-3.5" />
                 </span>
-                <span>{item.label}</span>
+                <span className={collapsed ? 'md:hidden' : ''}>{item.label}</span>
               </button>
             );
           })}
@@ -294,22 +335,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </>
         )}
 
-        <div className="flex items-center justify-between px-2 py-1.5">
+        <div className={`flex items-center ${collapsed ? 'flex-col gap-2 py-1' : 'justify-between px-2 py-1.5'}`}>
           <div className="flex items-center gap-2 min-w-0">
             <span
               className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold text-white shrink-0"
               style={{
                 backgroundColor: currentUser ? getMemberColor(currentUser.name) : '#007AFF',
               }}
+              title={currentUser?.name}
             >
               {currentUser ? getMemberInitials(currentUser.name) : 'LD'}
             </span>
-            <div className="min-w-0">
-              <div className="text-xs font-semibold text-[#1C1C1E] truncate">
-                {currentUser?.name}
+            {!collapsed && (
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-[#1C1C1E] truncate">
+                  {currentUser?.name}
+                </div>
+                <div className="text-[10px] text-[#8E8E93] truncate">{currentUser?.email}</div>
               </div>
-              <div className="text-[10px] text-[#8E8E93] truncate">{currentUser?.email}</div>
-            </div>
+            )}
           </div>
           <button
             type="button"
@@ -322,7 +366,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Live System Battery Bar */}
-        {battery.supported && battery.pct !== null && (
+        {!collapsed && battery.supported && battery.pct !== null && (
           <div className="mt-2 px-2 py-1.5 rounded-xl bg-black/[0.04] space-y-1">
             <div className="flex items-center justify-between text-[10px] font-semibold">
               <span className="inline-flex items-center gap-1 text-[#6E6E73]">

@@ -204,7 +204,7 @@ const WorkspaceShell: React.FC = () => {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-[#F5F4F0] flex items-center justify-center text-xs text-[#52525B]">
+      <div className="min-h-[100dvh] bg-[#F5F4F0] flex items-center justify-center text-xs text-[#52525B]">
         Loading Iqra Desk...
       </div>
     );
@@ -244,7 +244,7 @@ const WorkspaceShell: React.FC = () => {
 
   return (
     <div
-      className={`relative min-h-screen md:h-screen md:overflow-hidden ios-desk-bg theme-smooth flex flex-col md:flex-row animate-workspace-enter ${
+      className={`relative min-h-[100dvh] md:h-[100dvh] md:overflow-hidden ios-desk-bg theme-smooth flex flex-col md:flex-row animate-workspace-enter ${
         darkMode ? 'dark-theme' : ''
       }`}
     >
@@ -294,7 +294,7 @@ const WorkspaceShell: React.FC = () => {
         />
       )}
 
-      <main className="relative flex-1 min-w-0 md:h-screen md:overflow-y-auto p-3 sm:p-5 lg:p-8 pb-24 md:pb-8">
+      <main className="relative flex-1 min-w-0 md:h-[100dvh] md:overflow-y-auto p-3 sm:p-5 lg:p-8 pb-24 md:pb-8">
         <div
           className={
             activeTab === 'youtube' || activeTab === 'dashboard'

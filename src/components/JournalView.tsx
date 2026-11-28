@@ -96,6 +96,21 @@ export const JournalView: React.FC = () => {
   const drawCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const isDrawingRef = useRef(false);
   const lastDrawPtRef = useRef<{ x: number; y: number } | null>(null);
+  interface NotebookStroke {
+    id: string;
+    color: string;
+    width: number;
+    points: { x: number; y: number; p: number }[];
+  }
+  const pageStrokesRef = useRef<Record<string, NotebookStroke[]>>((() => {
+    try {
+      const raw = localStorage.getItem('ldoi_notebook_strokes_v1');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  })());
+  const activeStrokeRef = useRef<NotebookStroke | null>(null);
 
   // Page Extra Height (persisted per page via downward expand arrow)
   const [pageExtraHeights, setPageExtraHeights] = useState<Record<string, number>>(() => {
@@ -106,6 +121,40 @@ export const JournalView: React.FC = () => {
       return {};
     }
   });
+
+  // Free-floating, draggable & resizable images per notebook page
+  interface NotebookFloatingImage {
+    id: string;
+    src: string;
+    alt: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  }
+  const [pageImages, setPageImages] = useState<Record<string, NotebookFloatingImage[]>>(() => {
+    try {
+      const raw = localStorage.getItem('ldoi_notebook_images_v1');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [selectedImgId, setSelectedImgId] = useState<string | null>(null);
+
+  const persistPageImages = (
+    updater: (prev: Record<string, NotebookFloatingImage[]>) => Record<string, NotebookFloatingImage[]>
+  ) => {
+    setPageImages((prev) => {
+      const next = updater(prev);
+      try {
+        localStorage.setItem('ldoi_notebook_images_v1', JSON.stringify(next));
+      } catch {
+        // ignore quota errors
+      }
+      return next;
+    });
+  };
 
   // Export Menu State
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -396,53 +445,50 @@ export const JournalView: React.FC = () => {
     }
   };
 
-  // --- Notebook Image Upload / Paste / Drop ---
+  // --- Notebook Image Upload / Paste / Drop (small initial size, draggable & resizable anywhere on page) ---
   const insertImageFile = (file: File) => {
-    if (!file.type.startsWith('image/')) return;
+    if (!file.type.startsWith('image/') || !activeEntry) return;
+    const targetPageId = activeEntry.id;
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = typeof reader.result === 'string' ? reader.result : '';
       if (!dataUrl) return;
       const img = new Image();
       img.onload = () => {
-        const maxW = 1100;
+        const maxStoredW = 900;
         let finalUrl = dataUrl;
-        if (img.width > maxW) {
-          const scale = maxW / img.width;
+        if (img.width > maxStoredW) {
+          const scale = maxStoredW / img.width;
           const c = document.createElement('canvas');
-          c.width = maxW;
+          c.width = maxStoredW;
           c.height = Math.round(img.height * scale);
           const ctx = c.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, c.width, c.height);
-            finalUrl = c.toDataURL('image/jpeg', 0.88);
+            finalUrl = c.toDataURL('image/jpeg', 0.86);
           }
         }
-        const editor = editorRef.current;
-        if (!editor) return;
-        editor.focus();
-        const sel = window.getSelection();
-        if (savedRangeRef.current && sel && editor.contains(savedRangeRef.current.startContainer)) {
-          sel.removeAllRanges();
-          sel.addRange(savedRangeRef.current);
-        }
-        const el = document.createElement('img');
-        el.src = finalUrl;
-        el.alt = file.name || 'Notebook image';
-        el.className = 'max-w-full rounded-lg my-2 shadow-sm block';
-        if (sel && sel.rangeCount > 0 && editor.contains(sel.anchorNode)) {
-          const range = sel.getRangeAt(0);
-          range.deleteContents();
-          range.insertNode(el);
-          range.setStartAfter(el);
-          range.collapse(true);
-          sel.removeAllRanges();
-          sel.addRange(range);
-        } else {
-          editor.appendChild(el);
-        }
-        saveSelection();
-        handleContentChange(editor.innerHTML);
+        // Keep initial size small so it's easy to place & resize anywhere
+        const initW = Math.min(180, Math.max(100, img.width));
+        const aspect = img.height > 0 && img.width > 0 ? img.height / img.width : 0.75;
+        const initH = Math.max(60, Math.round(initW * aspect));
+        const newImgId = `nbimg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`;
+
+        persistPageImages((prev) => {
+          const curList = prev[targetPageId] ?? [];
+          const offset = (curList.length % 5) * 20;
+          const nextImg: NotebookFloatingImage = {
+            id: newImgId,
+            src: finalUrl,
+            alt: file.name || 'Notebook image',
+            x: 24 + offset,
+            y: 24 + offset,
+            w: initW,
+            h: initH,
+          };
+          return { ...prev, [targetPageId]: [...curList, nextImg] };
+        });
+        setSelectedImgId(newImgId);
       };
       img.src = dataUrl;
     };
@@ -464,9 +510,45 @@ export const JournalView: React.FC = () => {
     });
   };
 
-  // --- Stylus Drawing Canvas Persistence ---
+  // --- Stylus Drawing Canvas Persistence (Stroke-based for Whole-Stroke Erasing) ---
+  const redrawStrokesOnCanvas = (canvas: HTMLCanvasElement, strokes: NotebookStroke[]) => {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const stroke of strokes) {
+      if (stroke.points.length === 0) continue;
+      ctx.strokeStyle = stroke.color;
+      if (stroke.points.length === 1) {
+        const pt = stroke.points[0];
+        ctx.fillStyle = stroke.color;
+        ctx.beginPath();
+        ctx.arc(pt.x, pt.y, Math.max(1, stroke.width * pt.p) / 2, 0, Math.PI * 2);
+        ctx.fill();
+        continue;
+      }
+      for (let i = 1; i < stroke.points.length; i++) {
+        const prev = stroke.points[i - 1];
+        const curr = stroke.points[i];
+        ctx.lineWidth = Math.max(1, stroke.width * curr.p);
+        ctx.beginPath();
+        ctx.moveTo(prev.x, prev.y);
+        ctx.lineTo(curr.x, curr.y);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  };
+
   const saveDrawingForPage = (pageId: string) => {
     const canvas = drawCanvasRef.current;
+    try {
+      localStorage.setItem('ldoi_notebook_strokes_v1', JSON.stringify(pageStrokesRef.current));
+    } catch {
+      // ignore
+    }
     if (!canvas) return;
     try {
       const raw = localStorage.getItem('ldoi_notebook_drawings_v1');
@@ -478,12 +560,60 @@ export const JournalView: React.FC = () => {
     }
   };
 
+  const distToSegmentSq = (
+    px: number,
+    py: number,
+    ax: number,
+    ay: number,
+    bx: number,
+    by: number
+  ) => {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return (px - ax) * (px - ax) + (py - ay) * (py - ay);
+    const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+    const cx = ax + t * dx;
+    const cy = ay + t * dy;
+    return (px - cx) * (px - cx) + (py - cy) * (py - cy);
+  };
+
+  const eraseStrokeAtPoint = (pageId: string, x: number, y: number) => {
+    const strokes = pageStrokesRef.current[pageId] ?? [];
+    if (strokes.length === 0) return;
+    const remaining = strokes.filter((s) => {
+      const thresh = Math.max(12, s.width * 2.5);
+      const threshSq = thresh * thresh;
+      if (s.points.length === 1) {
+        const pt = s.points[0];
+        return (x - pt.x) * (x - pt.x) + (y - pt.y) * (y - pt.y) > threshSq;
+      }
+      for (let i = 1; i < s.points.length; i++) {
+        const a = s.points[i - 1];
+        const b = s.points[i];
+        if (distToSegmentSq(x, y, a.x, a.y, b.x, b.y) <= threshSq) {
+          return false;
+        }
+      }
+      return true;
+    });
+    if (remaining.length !== strokes.length) {
+      pageStrokesRef.current[pageId] = remaining;
+      if (drawCanvasRef.current) {
+        redrawStrokesOnCanvas(drawCanvasRef.current, remaining);
+      }
+      saveDrawingForPage(pageId);
+    }
+  };
+
   const clearDrawingForPage = () => {
     const canvas = drawCanvasRef.current;
     if (!canvas || !activeEntry) return;
     const ctx = canvas.getContext('2d');
     ctx?.clearRect(0, 0, canvas.width, canvas.height);
+    delete pageStrokesRef.current[activeEntry.id];
     try {
+      localStorage.setItem('ldoi_notebook_strokes_v1', JSON.stringify(pageStrokesRef.current));
       const raw = localStorage.getItem('ldoi_notebook_drawings_v1');
       const map: Record<string, string> = raw ? JSON.parse(raw) : {};
       delete map[activeEntry.id];
@@ -500,27 +630,21 @@ export const JournalView: React.FC = () => {
 
     const targetW = Math.max(300, editor.clientWidth);
     const targetH = Math.max(320 + activeExtraHeight, editor.scrollHeight, editor.clientHeight);
-    const prevSnapshot = canvas.width > 0 && canvas.height > 0 ? canvas.toDataURL('image/png') : null;
-    const prevPageId = canvas.dataset.pageId;
-
     canvas.width = targetW;
     canvas.height = targetH;
     canvas.dataset.pageId = activeEntry.id;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, targetW, targetH);
-
-    if (prevPageId === activeEntry.id && prevSnapshot) {
-      const img = new Image();
-      img.onload = () => ctx.drawImage(img, 0, 0);
-      img.src = prevSnapshot;
+    const strokes = pageStrokesRef.current[activeEntry.id] ?? [];
+    if (strokes.length > 0) {
+      redrawStrokesOnCanvas(canvas, strokes);
     } else {
+      const ctx = canvas.getContext('2d');
+      ctx?.clearRect(0, 0, targetW, targetH);
       try {
         const raw = localStorage.getItem('ldoi_notebook_drawings_v1');
         const map: Record<string, string> = raw ? JSON.parse(raw) : {};
         const saved = map[activeEntry.id];
-        if (saved) {
+        if (saved && ctx) {
           const img = new Image();
           img.onload = () => ctx.drawImage(img, 0, 0);
           img.src = saved;
@@ -539,9 +663,21 @@ export const JournalView: React.FC = () => {
     const safeName = title.replace(/[^a-z0-9\-_]+/gi, '_').slice(0, 60) || 'note';
     const htmlBody = editorRef.current?.innerHTML ?? activeEntry.content ?? '';
     const drawingUrl = drawCanvasRef.current?.toDataURL('image/png') ?? '';
+    const floatingImgs = pageImages[activeEntry.id] ?? [];
+    const editorW = Math.max(300, editorRef.current?.clientWidth || 720);
+    const minSheetH = Math.max(
+      320 + activeExtraHeight,
+      ...floatingImgs.map((im) => im.y + im.h + 24)
+    );
+    const floatingImgsHtml = floatingImgs
+      .map(
+        (im) =>
+          `<img src="${im.src}" alt="${im.alt.replace(/"/g, '&quot;')}" style="position:absolute;left:${im.x}px;top:${im.y}px;width:${im.w}px;height:${im.h}px;object-fit:contain;border-radius:8px;z-index:5;" />`
+      )
+      .join('');
 
     if (format === 'html') {
-      const doc = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:system-ui,-apple-system,sans-serif;max-width:780px;margin:40px auto;padding:24px;color:#18181B;background:#FCFBF8;line-height:1.7;}img{max-width:100%;border-radius:8px;}.sheet{position:relative;}.ink{position:absolute;inset:0;width:100%;pointer-events:none;}</style></head><body><h1>${title}</h1><div class="sheet">${htmlBody}${drawingUrl ? `<img class="ink" src="${drawingUrl}" alt="Stylus ink" />` : ''}</div></body></html>`;
+      const doc = `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:system-ui,-apple-system,sans-serif;max-width:820px;margin:40px auto;padding:24px;color:#18181B;background:#FCFBF8;line-height:1.7;}img{max-width:100%;border-radius:8px;}.sheet{position:relative;min-height:${minSheetH}px;}.ink{position:absolute;inset:0;width:100%;pointer-events:none;z-index:10;}</style></head><body><h1>${title}</h1><div class="sheet">${htmlBody}${floatingImgsHtml}${drawingUrl ? `<img class="ink" src="${drawingUrl}" alt="Stylus ink" />` : ''}</div></body></html>`;
       const blob = new Blob([doc], { type: 'text/html;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -556,7 +692,8 @@ export const JournalView: React.FC = () => {
       const tmp = document.createElement('div');
       tmp.innerHTML = htmlBody;
       const text = (tmp.innerText || tmp.textContent || '').trim();
-      const md = `# ${title}\n\n${text}\n`;
+      const imgMd = floatingImgs.map((im) => `![${im.alt}](${im.src})`).join('\n\n');
+      const md = `# ${title}\n\n${text}${imgMd ? `\n\n${imgMd}` : ''}\n`;
       const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -570,7 +707,7 @@ export const JournalView: React.FC = () => {
     if (format === 'pdf') {
       const win = window.open('', '_blank', 'width=900,height=700');
       if (!win) return;
-      win.document.write(`<!doctype html><html><head><title>${title}</title><style>@page{margin:16mm;}body{font-family:system-ui,-apple-system,sans-serif;color:#18181B;line-height:1.7;}h1{font-size:22px;margin-bottom:12px;border-bottom:1px solid #E4E2DC;padding-bottom:8px;}img{max-width:100%;border-radius:8px;}.sheet{position:relative;}.ink{position:absolute;inset:0;width:100%;pointer-events:none;}</style></head><body><h1>${title}</h1><div class="sheet">${htmlBody}${drawingUrl ? `<img class="ink" src="${drawingUrl}" alt="" />` : ''}</div><script>window.onload=()=>{setTimeout(()=>{window.print();},250);};</script></body></html>`);
+      win.document.write(`<!doctype html><html><head><title>${title}</title><style>@page{margin:16mm;}body{font-family:system-ui,-apple-system,sans-serif;color:#18181B;line-height:1.7;}h1{font-size:22px;margin-bottom:12px;border-bottom:1px solid #E4E2DC;padding-bottom:8px;}img{max-width:100%;border-radius:8px;}.sheet{position:relative;min-height:${minSheetH}px;}.ink{position:absolute;inset:0;width:100%;pointer-events:none;z-index:10;}</style></head><body><h1>${title}</h1><div class="sheet">${htmlBody}${floatingImgsHtml}${drawingUrl ? `<img class="ink" src="${drawingUrl}" alt="" />` : ''}</div><script>window.onload=()=>{setTimeout(()=>{window.print();},250);};</script></body></html>`);
       win.document.close();
       return;
     }
@@ -601,7 +738,12 @@ export const JournalView: React.FC = () => {
       wrappedLines.push(cur);
     }
 
-    const h = Math.max(820, 180 + wrappedLines.length * 36);
+    const scaleX = (w - 96) / editorW;
+    const maxImgBottom = floatingImgs.reduce(
+      (acc, im) => Math.max(acc, Math.round(100 + (im.y + im.h) * scaleX + 40)),
+      0
+    );
+    const h = Math.max(820, 180 + wrappedLines.length * 36, maxImgBottom);
     canvas.width = w;
     canvas.height = h;
     ctx.fillStyle = '#FCFBF8';
@@ -633,17 +775,41 @@ export const JournalView: React.FC = () => {
       a.click();
     };
 
-    if (drawingUrl) {
-      const inkImg = new Image();
-      inkImg.onload = () => {
-        ctx.drawImage(inkImg, 48, 100, w - 96, Math.min(h - 120, (inkImg.height / Math.max(1, inkImg.width)) * (w - 96)));
-        finalizePng();
-      };
-      inkImg.onerror = finalizePng;
-      inkImg.src = drawingUrl;
-    } else {
+    const loadImg = (src: string) =>
+      new Promise<HTMLImageElement | null>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null);
+        img.src = src;
+      });
+
+    void (async () => {
+      for (const im of floatingImgs) {
+        const loaded = await loadImg(im.src);
+        if (loaded) {
+          ctx.drawImage(
+            loaded,
+            48 + im.x * scaleX,
+            100 + im.y * scaleX,
+            im.w * scaleX,
+            im.h * scaleX
+          );
+        }
+      }
+      if (drawingUrl) {
+        const inkImg = await loadImg(drawingUrl);
+        if (inkImg) {
+          ctx.drawImage(
+            inkImg,
+            48,
+            100,
+            w - 96,
+            Math.min(h - 120, (inkImg.height / Math.max(1, inkImg.width)) * (w - 96))
+          );
+        }
+      }
       finalizePng();
-    }
+    })();
   };
 
   const createCheckRowElement = (initialText = ''): HTMLDivElement => {
@@ -1770,10 +1936,133 @@ export const JournalView: React.FC = () => {
                     className="notebook-editor w-full flex-1 p-3 text-sm text-[#18181B] ruled-paper border border-[#E4E2DC] rounded-lg focus:outline-none focus:border-[#0A5386] overflow-y-auto empty:before:content-[attr(data-placeholder)] empty:before:text-[#A1A1AA]"
                   />
 
+                  {/* Free-Floating Draggable & Resizable Images Layer */}
+                  {activeEntry && (pageImages[activeEntry.id] ?? []).length > 0 && (
+                    <div
+                      className={`absolute inset-0 overflow-hidden rounded-lg z-[5] ${
+                        drawMode ? 'pointer-events-none' : 'pointer-events-none'
+                      }`}
+                    >
+                      {(pageImages[activeEntry.id] ?? []).map((imgItem) => {
+                        const isSel = selectedImgId === imgItem.id;
+                        return (
+                          <div
+                            key={imgItem.id}
+                            style={{
+                              left: imgItem.x,
+                              top: imgItem.y,
+                              width: imgItem.w,
+                              height: imgItem.h,
+                            }}
+                            onPointerDown={(e) => {
+                              if (drawMode) return;
+                              if ((e.target as HTMLElement).closest('button, [data-resize]')) return;
+                              e.stopPropagation();
+                              e.preventDefault();
+                              setSelectedImgId(imgItem.id);
+                              const pageId = activeEntry.id;
+                              const startX = e.clientX;
+                              const startY = e.clientY;
+                              const origX = imgItem.x;
+                              const origY = imgItem.y;
+                              const onMove = (ev: PointerEvent) => {
+                                const dx = ev.clientX - startX;
+                                const dy = ev.clientY - startY;
+                                persistPageImages((prev) => ({
+                                  ...prev,
+                                  [pageId]: (prev[pageId] ?? []).map((it) =>
+                                    it.id === imgItem.id
+                                      ? {
+                                          ...it,
+                                          x: Math.max(0, Math.round(origX + dx)),
+                                          y: Math.max(0, Math.round(origY + dy)),
+                                        }
+                                      : it
+                                  ),
+                                }));
+                              };
+                              const onUp = () => {
+                                window.removeEventListener('pointermove', onMove);
+                                window.removeEventListener('pointerup', onUp);
+                              };
+                              window.addEventListener('pointermove', onMove);
+                              window.addEventListener('pointerup', onUp);
+                            }}
+                            className={`group absolute rounded-lg shadow-md cursor-grab active:cursor-grabbing select-none ${
+                              drawMode ? 'pointer-events-none' : 'pointer-events-auto'
+                            } ${isSel ? 'ring-2 ring-[#0A5386]' : 'hover:ring-2 hover:ring-[#0A5386]/50'}`}
+                          >
+                            <img
+                              src={imgItem.src}
+                              alt={imgItem.alt}
+                              draggable={false}
+                              className="w-full h-full object-contain rounded-lg bg-white/40"
+                            />
+                            <button
+                              type="button"
+                              onPointerDown={(e) => e.stopPropagation()}
+                              onClick={() => {
+                                const pageId = activeEntry.id;
+                                persistPageImages((prev) => ({
+                                  ...prev,
+                                  [pageId]: (prev[pageId] ?? []).filter((it) => it.id !== imgItem.id),
+                                }));
+                                if (selectedImgId === imgItem.id) setSelectedImgId(null);
+                              }}
+                              title="Remove image"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity absolute -top-2 -right-2 w-5 h-5 rounded-full bg-[#18181B]/85 hover:bg-red-600 text-white flex items-center justify-center shadow"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                            <div
+                              data-resize="true"
+                              onPointerDown={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                setSelectedImgId(imgItem.id);
+                                const pageId = activeEntry.id;
+                                const startX = e.clientX;
+                                const startY = e.clientY;
+                                const origW = imgItem.w;
+                                const origH = imgItem.h;
+                                const ratio = origH / Math.max(1, origW);
+                                const onMove = (ev: PointerEvent) => {
+                                  const dx = ev.clientX - startX;
+                                  const dy = ev.clientY - startY;
+                                  const delta = Math.abs(dx) >= Math.abs(dy) ? dx : dy / ratio;
+                                  const nextW = Math.max(60, Math.min(720, Math.round(origW + delta)));
+                                  const nextH = Math.max(45, Math.round(nextW * ratio));
+                                  persistPageImages((prev) => ({
+                                    ...prev,
+                                    [pageId]: (prev[pageId] ?? []).map((it) =>
+                                      it.id === imgItem.id ? { ...it, w: nextW, h: nextH } : it
+                                    ),
+                                  }));
+                                };
+                                const onUp = () => {
+                                  window.removeEventListener('pointermove', onMove);
+                                  window.removeEventListener('pointerup', onUp);
+                                };
+                                window.addEventListener('pointermove', onMove);
+                                window.addEventListener('pointerup', onUp);
+                              }}
+                              title="Drag to resize image"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity absolute bottom-0.5 right-0.5 w-4 h-4 cursor-nwse-resize rounded-sm bg-[#0A5386] text-white flex items-center justify-center shadow"
+                            >
+                              <svg className="w-2.5 h-2.5" viewBox="0 0 10 10" fill="currentColor">
+                                <path d="M9 1v8H1L9 1z" />
+                              </svg>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   <canvas
                     ref={drawCanvasRef}
                     onPointerDown={(e) => {
-                      if (!drawMode || !drawCanvasRef.current) return;
+                      if (!drawMode || !drawCanvasRef.current || !activeEntry) return;
                       e.currentTarget.setPointerCapture(e.pointerId);
                       const rect = e.currentTarget.getBoundingClientRect();
                       const pt = {
@@ -1782,45 +2071,65 @@ export const JournalView: React.FC = () => {
                       };
                       isDrawingRef.current = true;
                       lastDrawPtRef.current = pt;
+                      if (eraserMode) {
+                        eraseStrokeAtPoint(activeEntry.id, pt.x, pt.y);
+                        return;
+                      }
+                      const pressure = e.pressure && e.pressure > 0 ? e.pressure * 1.4 : 1;
+                      activeStrokeRef.current = {
+                        id: `stk_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 5)}`,
+                        color: penColor,
+                        width: penWidth,
+                        points: [{ x: pt.x, y: pt.y, p: pressure }],
+                      };
                     }}
                     onPointerMove={(e) => {
-                      if (!drawMode || !isDrawingRef.current || !drawCanvasRef.current || !lastDrawPtRef.current) return;
+                      if (!drawMode || !isDrawingRef.current || !drawCanvasRef.current || !lastDrawPtRef.current || !activeEntry) return;
                       const canvas = drawCanvasRef.current;
-                      const ctx = canvas.getContext('2d');
-                      if (!ctx) return;
                       const rect = canvas.getBoundingClientRect();
                       const pt = {
                         x: ((e.clientX - rect.left) / rect.width) * canvas.width,
                         y: ((e.clientY - rect.top) / rect.height) * canvas.height,
                       };
+                      if (eraserMode) {
+                        eraseStrokeAtPoint(activeEntry.id, pt.x, pt.y);
+                        lastDrawPtRef.current = pt;
+                        return;
+                      }
+                      const ctx = canvas.getContext('2d');
+                      if (!ctx) return;
+                      const pressure = e.pressure && e.pressure > 0 ? e.pressure * 1.4 : 1;
                       ctx.save();
                       ctx.lineCap = 'round';
                       ctx.lineJoin = 'round';
-                      const pressure = e.pressure && e.pressure > 0 ? e.pressure * 1.4 : 1;
-                      if (eraserMode) {
-                        ctx.globalCompositeOperation = 'destination-out';
-                        ctx.lineWidth = penWidth * 5;
-                      } else {
-                        ctx.globalCompositeOperation = 'source-over';
-                        ctx.strokeStyle = penColor;
-                        ctx.lineWidth = Math.max(1, penWidth * pressure);
-                      }
+                      ctx.globalCompositeOperation = 'source-over';
+                      ctx.strokeStyle = penColor;
+                      ctx.lineWidth = Math.max(1, penWidth * pressure);
                       ctx.beginPath();
                       ctx.moveTo(lastDrawPtRef.current.x, lastDrawPtRef.current.y);
                       ctx.lineTo(pt.x, pt.y);
                       ctx.stroke();
                       ctx.restore();
+                      activeStrokeRef.current?.points.push({ x: pt.x, y: pt.y, p: pressure });
                       lastDrawPtRef.current = pt;
                     }}
                     onPointerUp={() => {
                       if (!isDrawingRef.current) return;
                       isDrawingRef.current = false;
                       lastDrawPtRef.current = null;
-                      if (activeEntry) saveDrawingForPage(activeEntry.id);
+                      if (activeEntry && activeStrokeRef.current && !eraserMode) {
+                        const existing = pageStrokesRef.current[activeEntry.id] ?? [];
+                        pageStrokesRef.current[activeEntry.id] = [...existing, activeStrokeRef.current];
+                        activeStrokeRef.current = null;
+                        saveDrawingForPage(activeEntry.id);
+                      } else {
+                        activeStrokeRef.current = null;
+                      }
                     }}
                     onPointerCancel={() => {
                       isDrawingRef.current = false;
                       lastDrawPtRef.current = null;
+                      activeStrokeRef.current = null;
                     }}
                     className={`absolute inset-0 w-full h-full rounded-lg z-10 ${
                       drawMode ? 'pointer-events-auto touch-none cursor-crosshair' : 'pointer-events-none'

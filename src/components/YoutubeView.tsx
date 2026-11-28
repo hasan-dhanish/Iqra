@@ -126,8 +126,13 @@ function parseYouTubeUrl(rawUrl: string): { videoId?: string; listId?: string } 
   }
 }
 
-async function searchYouTubePublic(query: string): Promise<SearchResultItem[]> {
-  const res = await fetch(`/api/yt-search?q=${encodeURIComponent(query)}`);
+async function searchYouTubePublic(
+  query: string,
+  type: 'all' | 'playlist' = 'all'
+): Promise<SearchResultItem[]> {
+  const res = await fetch(
+    `/api/yt-search?q=${encodeURIComponent(query)}&type=${encodeURIComponent(type)}`
+  );
   if (res.ok) {
     const data = await res.json();
     if (Array.isArray(data.items) && data.items.length > 0) {
@@ -156,6 +161,7 @@ export const YoutubeView: React.FC<YoutubeViewProps> = ({
   onVideoChange,
 }) => {
   const [query, setQuery] = useState('');
+  const [searchFilter, setSearchFilter] = useState<'all' | 'playlist'>('all');
   const [viewMode, setViewMode] = useState<'browse' | 'watch'>(() =>
     initialVideo ? 'watch' : 'browse'
   );
@@ -348,7 +354,7 @@ export const YoutubeView: React.FC<YoutubeViewProps> = ({
     setBrowseTab('results');
     setViewMode('browse');
     try {
-      const items = await searchYouTubePublic(trimmed);
+      const items = await searchYouTubePublic(trimmed, searchFilter);
       setResults(items);
     } catch (err) {
       setSearchError(
@@ -514,17 +520,37 @@ export const YoutubeView: React.FC<YoutubeViewProps> = ({
           </div>
         </div>
 
-        {/* Centered Search Input */}
-        <form onSubmit={handleSearchOrUrl} className="flex-1 max-w-xl flex items-center gap-1.5">
+        {/* Centered Search Input + Video/YT Playlist Filter */}
+        <form onSubmit={handleSearchOrUrl} className="flex-1 max-w-2xl flex items-center gap-1.5">
           <div className="relative flex-1">
             <Search className="w-3.5 h-3.5 text-[#8E8E93] absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search lectures, channels, or paste YouTube URL..."
+              placeholder="Search lectures, playlists, or paste YouTube URL..."
               className="w-full pl-9 pr-3 py-2 text-xs rounded-full border border-[#E2E0D8] bg-white/70 focus:outline-none focus:border-[#9B5B76]"
             />
+          </div>
+          <div className="inline-flex items-center rounded-full bg-black/5 p-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setSearchFilter('all')}
+              className={`px-2.5 py-1 text-[10px] font-bold rounded-full transition-colors ${
+                searchFilter === 'all' ? 'bg-[#9B5B76] text-white' : 'text-[#6E6E73] hover:text-[#1C1C1E]'
+              }`}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              onClick={() => setSearchFilter('playlist')}
+              className={`px-2.5 py-1 text-[10px] font-bold rounded-full transition-colors ${
+                searchFilter === 'playlist' ? 'bg-[#9B5B76] text-white' : 'text-[#6E6E73] hover:text-[#1C1C1E]'
+              }`}
+            >
+              YT Playlists
+            </button>
           </div>
           <button
             type="submit"
@@ -1022,7 +1048,7 @@ export const YoutubeView: React.FC<YoutubeViewProps> = ({
                 const histItem = item as HistoryEntry;
                 return (
                   <div
-                    key={`${browseTab}-${item.videoId}`}
+                    key={`${browseTab}-${item.listId || ''}-${item.videoId}`}
                     className="paper-card rounded-2xl overflow-hidden flex flex-col justify-between group"
                   >
                     <button
@@ -1041,9 +1067,13 @@ export const YoutubeView: React.FC<YoutubeViewProps> = ({
                             <Play className="w-5 h-5 ml-0.5" />
                           </span>
                         </div>
-                        {item.durationText && (
-                          <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/80 text-white text-[10px] font-mono-num font-semibold">
-                            {item.durationText}
+                        {(item.listId || item.durationText) && (
+                          <span
+                            className={`absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded text-white text-[10px] font-mono-num font-semibold ${
+                              item.listId ? 'bg-[#9B5B76]' : 'bg-black/80'
+                            }`}
+                          >
+                            {item.listId ? `PLAYLIST · ${item.durationText || ''}` : item.durationText}
                           </span>
                         )}
                       </div>

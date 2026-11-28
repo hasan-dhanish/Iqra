@@ -16,6 +16,7 @@ function ytSearchDevPlugin(): Plugin {
         const url = new URL(req.url || '/', 'http://localhost');
         const q = url.searchParams.get('q')?.trim() || '';
         const channelId = url.searchParams.get('channelId')?.trim() || '';
+        const searchType = url.searchParams.get('type')?.trim() || 'all';
         if (!q && !channelId) {
           res.statusCode = 400;
           res.setHeader('Content-Type', 'application/json');
@@ -89,14 +90,16 @@ function ytSearchDevPlugin(): Plugin {
             return;
           }
 
-          const ytRes = await fetch(
-            `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`,
-            { headers: YT_HEADERS }
-          );
+          const searchUrl =
+            searchType === 'playlist'
+              ? `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}&sp=EgIQAw%253D%253D`
+              : `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+          const ytRes = await fetch(searchUrl, { headers: YT_HEADERS });
           const html = await ytRes.text();
           const match = html.match(/var ytInitialData = (\{.*?\});<\/script>/);
           const items: Array<{
             videoId: string;
+            listId?: string;
             title: string;
             channel: string;
             channelId?: string;
@@ -111,21 +114,60 @@ function ytSearchDevPlugin(): Plugin {
             for (const section of sections) {
               for (const entry of section?.itemSectionRenderer?.contents ?? []) {
                 const vr = entry?.videoRenderer;
-                if (!vr?.videoId) continue;
-                const ownerRun = vr.ownerText?.runs?.[0];
-                items.push({
-                  videoId: vr.videoId,
-                  title: vr.title?.runs?.[0]?.text ?? 'Untitled Video',
-                  channel: ownerRun?.text ?? 'YouTube',
-                  channelId: ownerRun?.navigationEndpoint?.browseEndpoint?.browseId,
-                  thumbnail:
-                    vr.thumbnail?.thumbnails?.slice(-1)[0]?.url ??
-                    `https://i.ytimg.com/vi/${vr.videoId}/hqdefault.jpg`,
-                  durationText: vr.lengthText?.simpleText ?? 'LIVE',
-                });
-                if (items.length >= 16) break;
+                const pr = entry?.playlistRenderer;
+                const lvm = entry?.lockupViewModel;
+
+                if (vr?.videoId && searchType !== 'playlist') {
+                  const ownerRun = vr.ownerText?.runs?.[0];
+                  items.push({
+                    videoId: vr.videoId,
+                    title: vr.title?.runs?.[0]?.text ?? 'Untitled Video',
+                    channel: ownerRun?.text ?? 'YouTube',
+                    channelId: ownerRun?.navigationEndpoint?.browseEndpoint?.browseId,
+                    thumbnail:
+                      vr.thumbnail?.thumbnails?.slice(-1)[0]?.url ??
+                      `https://i.ytimg.com/vi/${vr.videoId}/hqdefault.jpg`,
+                    durationText: vr.lengthText?.simpleText ?? 'LIVE',
+                  });
+                } else if (pr?.playlistId) {
+                  const firstVid = pr.videos?.[0]?.childVideoRenderer?.videoId || '';
+                  const ownerRun = pr.shortBylineText?.runs?.[0] ?? pr.longBylineText?.runs?.[0];
+                  items.push({
+                    videoId: firstVid,
+                    listId: pr.playlistId,
+                    title: pr.title?.simpleText ?? pr.title?.runs?.[0]?.text ?? 'YouTube Playlist',
+                    channel: ownerRun?.text ?? 'YouTube Playlist',
+                    channelId: ownerRun?.navigationEndpoint?.browseEndpoint?.browseId,
+                    thumbnail:
+                      pr.thumbnails?.[0]?.thumbnails?.slice(-1)[0]?.url ??
+                      (firstVid ? `https://i.ytimg.com/vi/${firstVid}/hqdefault.jpg` : ''),
+                    durationText: pr.videoCount ? `${pr.videoCount} videos` : 'PLAYLIST',
+                  });
+                } else if (lvm?.contentId && lvm?.contentType === 'LOCKUP_CONTENT_TYPE_PLAYLIST') {
+                  const thumbUrl =
+                    lvm.contentImage?.collectionThumbnailViewModel?.primaryThumbnail
+                      ?.thumbnailViewModel?.image?.sources?.slice(-1)[0]?.url ??
+                    lvm.contentImage?.thumbnailViewModel?.image?.sources?.slice(-1)[0]?.url ??
+                    '';
+                  const badgeText =
+                    lvm.contentImage?.collectionThumbnailViewModel?.primaryThumbnail
+                      ?.thumbnailViewModel?.overlays?.[0]?.thumbnailOverlayBadgeViewModel
+                      ?.thumbnailBadges?.[0]?.thumbnailBadgeViewModel?.text ?? 'PLAYLIST';
+                  const metaRows = lvm.metadata?.lockupMetadataViewModel?.metadata?.contentMetadataViewModel?.metadataRows ?? [];
+                  const channelText =
+                    metaRows?.[0]?.metadataParts?.[0]?.text?.content ?? 'YouTube Playlist';
+                  items.push({
+                    videoId: '',
+                    listId: lvm.contentId,
+                    title: lvm.metadata?.lockupMetadataViewModel?.title?.content ?? 'YouTube Playlist',
+                    channel: channelText,
+                    thumbnail: thumbUrl,
+                    durationText: badgeText,
+                  });
+                }
+                if (items.length >= 36) break;
               }
-              if (items.length >= 16) break;
+              if (items.length >= 36) break;
             }
           }
           res.statusCode = 200;

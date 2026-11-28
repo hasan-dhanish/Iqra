@@ -55,7 +55,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   };
 
   return (
-    <div className="relative min-h-screen flex flex-col justify-end p-4 sm:p-6 overflow-hidden bg-[#111317]">
+    <div className="relative min-h-[100dvh] flex flex-col justify-end p-4 sm:p-6 overflow-hidden bg-[#111317]">
       {/* Sunrise Layer (Day) */}
       <div
         aria-hidden="true"
